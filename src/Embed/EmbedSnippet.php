@@ -1,0 +1,170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Gurb\Embed;
+
+use Gurb\ApiKey;
+use Gurb\EmbedSection;
+use InvalidArgumentException;
+
+/**
+ * Renders the host page's `<script>` snippet and the `GurbEmbed.mount({...})`
+ * call for a token your PHP app just minted.
+ *
+ * There is no PHP equivalent of `@gurb/embed`, and there should not be: that
+ * package runs in the visitor's browser, and PHP finished running before the
+ * browser saw anything. What PHP can usefully own is the handoff — printing the
+ * mount call with a fresh token already in it, so a Blade/Twig template does not
+ * hand-assemble a script tag around a credential.
+ *
+ * The tradeoff of printing the token into HTML: it lands in the page source, and
+ * therefore in any full-page cache. That is acceptable only because embed tokens
+ * are single-use and expire in ~120 seconds. If your framework caches rendered
+ * HTML for longer than that, use renderAsync() instead, which prints a fetch
+ * callback and keeps the token out of the markup entirely.
+ */
+final class EmbedSnippet
+{
+    private const DEFAULT_BASE_URL = 'https://mygurb.com';
+
+    /** The UMD build of @gurb/embed, which exposes the global `GurbEmbed`. */
+    private const DEFAULT_SCRIPT_URL = 'https://unpkg.com/@gurb/embed/dist/index.global.js';
+
+    public function __construct(
+        private readonly string $baseUrl = self::DEFAULT_BASE_URL,
+        private readonly string $scriptUrl = self::DEFAULT_SCRIPT_URL,
+    ) {
+    }
+
+    /**
+     * Print everything the page needs: a container, the loader, the mount call.
+     *
+     * @param string $targetId     DOM id for the container div.
+     * @param string $token        A token from GurbClient::createEmbedSession().
+     * @param int    $initialHeight Height before the frame reports its own.
+     *
+     * @return string HTML, safe to echo directly.
+     */
+    public function render(
+        string $targetId,
+        string $slug,
+        EmbedSection $section,
+        string $token,
+        int $initialHeight = 600,
+        bool $autoResize = true,
+    ): string {
+        $this->assertNotASecret($token);
+
+        return $this->wrap($targetId, [
+            'target' => '#' . $targetId,
+            'slug' => $slug,
+            'section' => $section->value,
+            'baseUrl' => $this->baseUrl,
+            'initialHeight' => $initialHeight,
+            'autoResize' => $autoResize,
+            'token' => $token,
+        ]);
+    }
+
+    /**
+     * Same, but the browser fetches the token from an endpoint of YOUR app.
+     *
+     * Prefer this whenever the page might be cached, prerendered, or sat on by a
+     * user for a while: a token baked into HTML is often already dead by the
+     * time someone scrolls to the frame, and a dead token renders an empty pane
+     * with no obvious cause.
+     *
+     * @param string $tokenEndpoint A path on your own site that returns
+     *                              `{"token": "..."}`. It must apply YOUR auth —
+     *                              whoever can call it can join your community.
+     */
+    public function renderAsync(
+        string $targetId,
+        string $slug,
+        EmbedSection $section,
+        string $tokenEndpoint,
+        int $initialHeight = 600,
+        bool $autoResize = true,
+    ): string {
+        return $this->wrap($targetId, [
+            'target' => '#' . $targetId,
+            'slug' => $slug,
+            'section' => $section->value,
+            'baseUrl' => $this->baseUrl,
+            'initialHeight' => $initialHeight,
+            'autoResize' => $autoResize,
+        ], tokenEndpoint: $tokenEndpoint);
+    }
+
+    /** @param array<string, mixed> $options */
+    private function wrap(string $targetId, array $options, ?string $tokenEndpoint = null): string
+    {
+        $id = \htmlspecialchars($targetId, \ENT_QUOTES | \ENT_SUBSTITUTE, 'UTF-8');
+        $script = \htmlspecialchars($this->scriptUrl, \ENT_QUOTES | \ENT_SUBSTITUTE, 'UTF-8');
+        $json = $this->jsonForScriptTag($options);
+
+        $mountArgs = $tokenEndpoint === null
+            ? $json
+            : \sprintf(
+                "Object.assign(%s, { fetchToken: () => fetch(%s, { method: 'POST', credentials: 'same-origin' }).then(r => r.json()).then(d => d.token) })",
+                $json,
+                $this->jsonForScriptTag($tokenEndpoint),
+            );
+
+        // The loader is a plain blocking script and the mount call follows it
+        // directly. No `defer`, no DOMContentLoaded wrapper: both introduce an
+        // ordering question ("has the loader run yet?", "has DOMContentLoaded
+        // already fired for this AJAX-inserted fragment?") that this arrangement
+        // simply does not have — the container is parsed, then the loader runs,
+        // then mount runs. Put the snippet where you want the frame.
+        return <<<HTML
+            <div id="{$id}"></div>
+            <script src="{$script}"></script>
+            <script>
+              GurbEmbed.mount({$mountArgs})
+            </script>
+            HTML;
+    }
+
+    /**
+     * JSON-encode for placement inside a `<script>` block.
+     *
+     * HEX_TAG/HEX_AMP/HEX_APOS/HEX_QUOT are the whole point: without them a slug
+     * or token containing `</script>` closes the block early and everything after
+     * it becomes markup the browser will happily execute. htmlspecialchars is the
+     * wrong tool here — inside a script element the HTML parser does not decode
+     * entities, so escaping that way would corrupt the value instead.
+     */
+    private function jsonForScriptTag(mixed $value): string
+    {
+        return \json_encode(
+            $value,
+            \JSON_THROW_ON_ERROR
+            | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT
+            | \JSON_UNESCAPED_UNICODE
+            | \JSON_UNESCAPED_SLASHES,
+        );
+    }
+
+    /**
+     * Refuse to print a secret API key into a web page.
+     *
+     * The TypeScript SDK keeps the key out of the browser with a separate
+     * package plus a `window` check. PHP has neither problem and neither
+     * defence: one process holds the key AND writes the HTML, so the one way to
+     * leak it is passing it where a token belongs — both are "the Gurb
+     * credential" to someone wiring this up quickly. This is that guard.
+     */
+    private function assertNotASecret(string $token): void
+    {
+        if (ApiKey::looksLikeSecret($token)) {
+            throw new InvalidArgumentException(
+                'That is a secret API key, not an embed token. Never render an API key into a page — mint an embed token with GurbClient::createEmbedSession().',
+            );
+        }
+        if ($token === '') {
+            throw new InvalidArgumentException('Empty embed token.');
+        }
+    }
+}
