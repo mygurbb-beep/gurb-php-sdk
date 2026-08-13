@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Gurb;
 
-use Gurb\Http\CurlHttpClient;
 use Gurb\Http\HttpClient;
 use Gurb\Internal\Requester;
 use Gurb\Resource\Admin\AdminApiKeysResource;
@@ -79,7 +78,7 @@ final class GurbAdminClient
         $this->requester = new Requester(
             $adminKey,
             \rtrim($baseUrl, '/'),
-            $httpClient ?? new CurlHttpClient(),
+            $httpClient,
             $timeoutMs,
         );
 

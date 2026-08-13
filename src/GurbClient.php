@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Gurb;
 
 use Gurb\Embed\EmbedSnippet;
-use Gurb\Http\CurlHttpClient;
 use Gurb\Http\HttpClient;
 use Gurb\Input\CreateCommunityInput;
 use Gurb\Internal\Requester;
@@ -35,7 +34,6 @@ final class GurbClient
     private const DEFAULT_TIMEOUT_MS = 15_000;
 
     private readonly Requester $requester;
-    private readonly string $baseUrl;
 
     public readonly CommunityResource $community;
     public readonly CommunityRequestsResource $communityRequests;
@@ -71,11 +69,14 @@ final class GurbClient
         // a 401 or a 403 from a route that was never the problem.
         ApiKey::assertValid($apiKey);
 
-        $this->baseUrl = \rtrim($baseUrl, '/');
+        // Null means "use the bundled transport", and the Requester decides what
+        // that is — see Requester::defaultHttpClient(). The base URL is not kept
+        // on this object either: one copy, held by the thing that builds URLs
+        // from it, is one fewer place for a trailing slash to be handled twice.
         $this->requester = new Requester(
             $apiKey,
-            $this->baseUrl,
-            $httpClient ?? new CurlHttpClient(),
+            \rtrim($baseUrl, '/'),
+            $httpClient,
             $timeoutMs,
         );
 
@@ -163,7 +164,7 @@ final class GurbClient
     {
         return \sprintf(
             '%s/embed/%s/%s#t=%s',
-            $this->baseUrl,
+            $this->requester->baseUrl(),
             \rawurlencode($slug),
             $section->value,
             \rawurlencode($token),
@@ -179,6 +180,6 @@ final class GurbClient
      */
     public function embedSnippet(): EmbedSnippet
     {
-        return new EmbedSnippet($this->baseUrl);
+        return new EmbedSnippet($this->requester->baseUrl());
     }
 }

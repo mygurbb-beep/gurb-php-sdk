@@ -6,6 +6,7 @@ namespace Gurb\Internal;
 
 use Gurb\GurbApiException;
 use Gurb\GurbErrorCode;
+use Gurb\Http\CurlHttpClient;
 use Gurb\Http\HttpClient;
 use Gurb\Http\HttpRequest;
 use Gurb\Http\TransportException;
@@ -30,17 +31,62 @@ use Gurb\Http\TransportException;
  */
 final class Requester
 {
+    private readonly HttpClient $httpClient;
+
+    /**
+     * @param HttpClient|null $httpClient Null selects the bundled curl transport.
+     *                                    Choosing the default lives HERE rather
+     *                                    than in each client, mirroring the
+     *                                    TypeScript SDK where the Transport owns
+     *                                    both `options.fetch ?? globalThis.fetch`
+     *                                    and the "is there one at all?" check. Two
+     *                                    clients picking their own default is how
+     *                                    the community and admin surfaces start
+     *                                    behaving differently.
+     *
+     * @throws GurbApiException NETWORK_ERROR (status 0) when no transport is
+     *                          available at all.
+     */
     public function __construct(
         private readonly string $apiKey,
         private readonly string $baseUrl,
-        private readonly HttpClient $httpClient,
+        ?HttpClient $httpClient,
         private readonly int $timeoutMs,
     ) {
+        $this->httpClient = $httpClient ?? self::defaultHttpClient();
     }
 
     public function baseUrl(): string
     {
         return $this->baseUrl;
+    }
+
+    /**
+     * The bundled transport, or a GurbApiException explaining why there is none.
+     *
+     * CurlHttpClient signals a missing ext-curl with a TransportException, and
+     * that type is documented as never escaping the SDK — but on this path it
+     * would, because the client constructs it before any Requester exists to
+     * catch it. A consumer following the README's "there is exactly one thing to
+     * catch" would then have an uncaught RuntimeException on a machine without
+     * ext-curl. Converting here keeps that promise true, and matches the
+     * TypeScript SDK, which raises NETWORK_ERROR with status 0 when there is no
+     * `fetch` to use.
+     *
+     * @throws GurbApiException
+     */
+    private static function defaultHttpClient(): HttpClient
+    {
+        try {
+            return new CurlHttpClient();
+        } catch (TransportException $e) {
+            throw new GurbApiException(
+                'No HTTP transport available. The bundled CurlHttpClient needs ext-curl — install it, or pass your own HttpClient.',
+                GurbErrorCode::NETWORK_ERROR,
+                0,
+                previous: $e,
+            );
+        }
     }
 
     /**
@@ -120,7 +166,14 @@ final class Requester
     /** @return array<string, mixed> */
     private function decode(string $body, int $status): array
     {
-        if (\trim($body) === '') {
+        // `=== ''`, not `trim($body) === ''`, and the difference is deliberate.
+        // The TypeScript SDK reads `text.length > 0 ? JSON.parse(text) : {}`, so
+        // a body of "" is an empty payload and a body of "  " is a parse failure.
+        // Trimming first would make PHP silently accept a whitespace-only
+        // response and hand back a model full of defaults — an id of "", a
+        // visibility of PRIVATE — where TypeScript raises. A blank page from a
+        // proxy should look like the failure it is on both SDKs.
+        if ($body === '') {
             return [];
         }
 

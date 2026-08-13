@@ -221,6 +221,67 @@ final class RequestTest extends TestCase
     }
 
     #[Test]
+    public function a_truly_empty_body_is_an_empty_payload_not_a_parse_failure(): void
+    {
+        // A DELETE answering 204 with nothing at all. The TypeScript SDK reads
+        // `text.length > 0 ? JSON.parse(text) : {}`, so "" is a payload of {}
+        // and not an error. Nothing here may throw.
+        $http = StubHttpClient::raw(204, '');
+        $client = new GurbClient(self::KEY, 'https://x.test', $http);
+
+        $client->members->remove('mem_1');
+
+        self::assertSame('DELETE', $http->lastCall()->method);
+        self::assertSame('https://x.test/api/sdk/members/mem_1', $http->lastCall()->url);
+    }
+
+    #[Test]
+    public function a_whitespace_only_body_is_a_parse_failure_exactly_as_it_is_in_typescript(): void
+    {
+        // The drift this pins down: trimming before the emptiness check would
+        // make PHP accept a blank page from a proxy and hand back a Community
+        // with an empty id and a PRIVATE visibility it never asserted. The
+        // TypeScript SDK raises here — JSON.parse("  ") throws — so PHP must.
+        $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::raw(200, "   \n"));
+
+        try {
+            $client->community->get();
+            self::fail('Expected a GurbApiException.');
+        } catch (GurbApiException $e) {
+            self::assertSame(GurbErrorCode::UNKNOWN, $e->code(), 'a 2xx that will not parse is UNKNOWN');
+            self::assertSame(200, $e->status());
+            self::assertStringContainsString('non-JSON response', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function a_missing_default_transport_is_a_gurb_exception_not_a_raw_runtime_error(): void
+    {
+        // CurlHttpClient signals a missing ext-curl with a TransportException,
+        // and that type is documented as never escaping the SDK. It would
+        // escape here — the client builds the transport before any Requester
+        // exists to catch it — so a consumer following the README's "there is
+        // exactly one thing to catch" would meet an uncaught RuntimeException.
+        // The TypeScript SDK raises NETWORK_ERROR with status 0 when there is
+        // no fetch; this is the same answer to the same question.
+        if (\function_exists('curl_init')) {
+            self::markTestSkipped(
+                'ext-curl is present, so the default transport builds. Run the suite with '
+                . 'disable_functions=curl_init to exercise this path.',
+            );
+        }
+
+        try {
+            new GurbClient(self::KEY, 'https://x.test');
+            self::fail('Expected a GurbApiException.');
+        } catch (GurbApiException $e) {
+            self::assertSame(GurbErrorCode::NETWORK_ERROR, $e->code());
+            self::assertSame(0, $e->status(), 'nothing was ever sent');
+            self::assertStringContainsString('ext-curl', $e->getMessage(), 'the message names the fix');
+        }
+    }
+
+    #[Test]
     public function it_maps_a_page_of_results_into_typed_objects(): void
     {
         $http = StubHttpClient::json(200, ['data' => [
