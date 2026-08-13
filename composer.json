@@ -1,6 +1,6 @@
 {
   "name": "gurb/sdk",
-  "description": "Official PHP SDK for the Gurb community platform. Reads your community's data and mints embed sessions. Server-side only — it holds your secret API key.",
+  "description": "Official PHP SDK for the Gurb community platform. Reads your community's data, manages members and permissions, and mints embed sessions. Server-side only — it holds your secret API key.",
   "type": "library",
   "license": "MIT",
   "keywords": ["gurb", "mygurb", "community", "sdk", "embed"],

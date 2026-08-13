@@ -14,10 +14,14 @@ namespace Gurb\Http;
 final class HttpRequest
 {
     /**
-     * @param 'GET'|'POST'           $method
-     * @param array<string, string>  $headers
-     * @param string|null            $body      Already-encoded body, or null for GET.
-     * @param int                    $timeoutMs Whole-request budget, not per-byte.
+     * @param 'GET'|'POST'|'PATCH'|'DELETE' $method
+     * @param array<string, string>         $headers
+     * @param string|null                   $body      Already-encoded body, or null.
+     *                                                 Null for every GET and DELETE,
+     *                                                 and for POSTs that carry their
+     *                                                 whole meaning in the URL
+     *                                                 (approve, revoke).
+     * @param int                           $timeoutMs Whole-request budget, not per-byte.
      */
     public function __construct(
         public readonly string $method,

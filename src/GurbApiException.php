@@ -70,6 +70,29 @@ class GurbApiException extends RuntimeException
     }
 
     /**
+     * A failure this SDK detected itself, before anything was sent.
+     *
+     * WHY THIS EXISTS AS A NAMED CONSTRUCTOR: every local guard must produce the
+     * *same kind of failure* as every other one, and the same kind the server
+     * produces for the same mistake. In the TypeScript SDK these guards were
+     * originally written ad hoc, and some threw synchronously out of a method
+     * declared to return a Promise — so `bulkUpsert(tooMany)` had to be caught
+     * with try/catch while `bulkUpsert(duplicateId)` had to be caught with
+     * `.catch()`, for two errors that are the same error to the person calling.
+     *
+     * PHP cannot reproduce that particular split (an exception is an exception),
+     * but the general lesson holds and is worth spending a constructor on: one
+     * code, one status, one shape. `code()` is always VALIDATION_ERROR and
+     * `status()` is always 0 — zero meaning "no server ever saw this", which is
+     * exactly what distinguishes it from the 422 you would have got had we sent
+     * it. `isRetryable()` is false, because retrying a bad argument never helps.
+     */
+    public static function localValidation(string $message): self
+    {
+        return new self($message, GurbErrorCode::VALIDATION_ERROR, 0);
+    }
+
+    /**
      * Map an HTTP failure onto a stable code.
      *
      * The backend's `error` field wins when we recognise it. Unrecognised

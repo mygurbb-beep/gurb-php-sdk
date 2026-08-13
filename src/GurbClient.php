@@ -7,20 +7,27 @@ namespace Gurb;
 use Gurb\Embed\EmbedSnippet;
 use Gurb\Http\CurlHttpClient;
 use Gurb\Http\HttpClient;
+use Gurb\Input\CreateCommunityInput;
 use Gurb\Internal\Requester;
+use Gurb\Model\CommunityRequest;
 use Gurb\Model\EmbedSession;
 use Gurb\Resource\AlbumsResource;
 use Gurb\Resource\BlogsResource;
+use Gurb\Resource\CommunityRequestsResource;
 use Gurb\Resource\CommunityResource;
 use Gurb\Resource\EventsResource;
 use Gurb\Resource\MembersResource;
 use Gurb\Resource\TweetsResource;
 
 /**
- * Server-side SDK for the Gurb community platform.
+ * Server-side SDK for the Gurb community platform, scoped to ONE community.
  *
  * ⚠️  This object holds your secret API key. Keep it in an environment variable,
  * never in a template variable, a JS bundle, or a JSON response to a browser.
+ *
+ * Platform administration lives on `GurbAdminClient` and needs a different
+ * credential. This class refuses a super-admin key at construction rather than
+ * quietly accepting more authority than it needs — see ApiKey::assertValid().
  */
 final class GurbClient
 {
@@ -31,6 +38,7 @@ final class GurbClient
     private readonly string $baseUrl;
 
     public readonly CommunityResource $community;
+    public readonly CommunityRequestsResource $communityRequests;
     public readonly TweetsResource $tweets;
     public readonly EventsResource $events;
     public readonly BlogsResource $blogs;
@@ -59,8 +67,8 @@ final class GurbClient
         int $timeoutMs = self::DEFAULT_TIMEOUT_MS,
     ) {
         // Checked here, not on first request: an integrator who pasted a session
-        // JWT should be told what they did, not handed a 401 from a route that
-        // was never the problem.
+        // JWT — or a super-admin key — should be told what they did, not handed
+        // a 401 or a 403 from a route that was never the problem.
         ApiKey::assertValid($apiKey);
 
         $this->baseUrl = \rtrim($baseUrl, '/');
@@ -72,11 +80,27 @@ final class GurbClient
         );
 
         $this->community = new CommunityResource($this->requester);
+        $this->communityRequests = new CommunityRequestsResource($this->requester);
         $this->tweets = new TweetsResource($this->requester);
         $this->events = new EventsResource($this->requester);
         $this->blogs = new BlogsResource($this->requester);
         $this->albums = new AlbumsResource($this->requester);
         $this->members = new MembersResource($this->requester);
+    }
+
+    // ─── Community creation ──────────────────────────────────────────────────
+
+    /**
+     * Ask for a new community to be created. Returns a PENDING request, never a
+     * community — see `CommunityResource::requestCreation()`, which this simply
+     * forwards to so the operation is reachable under the name the other SDKs
+     * use as well.
+     *
+     * @throws GurbApiException
+     */
+    public function requestCommunityCreation(CreateCommunityInput $input): CommunityRequest
+    {
+        return $this->community->requestCreation($input);
     }
 
     // ─── Embed ───────────────────────────────────────────────────────────────

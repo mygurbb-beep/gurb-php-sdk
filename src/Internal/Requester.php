@@ -19,6 +19,14 @@ use Gurb\Http\TransportException;
  * is exactly one place that knows the API key exists and exactly one place that
  * decides what an error looks like. A resource cannot accidentally send the key
  * somewhere else, because it never sees it.
+ *
+ * BOTH CLIENTS SHARE THIS CLASS. `GurbClient` builds one with a community key
+ * and `GurbAdminClient` builds one with a super-admin key, and neither has any
+ * HTTP code of its own. That is deliberate: "how is a request authenticated,
+ * how is an error shaped, how is a timeout reported" must have one answer, not
+ * one per client. A drift between the community and admin surfaces on any of
+ * those three would be a security difference, not a style difference — imagine
+ * the admin path forgetting to keep the key out of the query string.
  */
 final class Requester
 {
@@ -36,11 +44,18 @@ final class Requester
     }
 
     /**
-     * @param 'GET'|'POST'                   $method
+     * PATCH and DELETE joined GET and POST when the membership write surface
+     * landed. Nothing else changed: the same header, the same error mapping,
+     * the same unwrapping. A verb is not a reason to fork this method.
+     *
+     * @param 'GET'|'POST'|'PATCH'|'DELETE'  $method
      * @param array<string, scalar|null>     $query Null values are dropped.
      * @param array<string, mixed>|null      $body
      *
-     * @return array<string, mixed> The unwrapped payload.
+     * @return array<string, mixed> The unwrapped payload. An empty array when
+     *                              the endpoint answers `data: null` — a DELETE
+     *                              has nothing to return, and callers of those
+     *                              routes are typed `void` accordingly.
      *
      * @throws GurbApiException
      */
