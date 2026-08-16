@@ -7,6 +7,7 @@ namespace Gurb\Tests;
 use Gurb\GurbApiException;
 use Gurb\GurbClient;
 use Gurb\GurbErrorCode;
+use Gurb\Input\BulkMemberInput;
 use Gurb\Tests\Support\StubHttpClient;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -279,6 +280,30 @@ final class RequestTest extends TestCase
             self::assertSame(0, $e->status(), 'nothing was ever sent');
             self::assertStringContainsString('ext-curl', $e->getMessage(), 'the message names the fix');
         }
+    }
+
+    #[Test]
+    public function an_unencodable_request_body_is_a_gurb_exception_not_a_raw_json_exception(): void
+    {
+        // json_encode(JSON_THROW_ON_ERROR) throws a \JsonException, which is not
+        // a GurbApiException — so before this was caught, malformed UTF-8 in any
+        // write body escaped the SDK entirely. The realistic case is a latin-1
+        // display name pulled from an old table into a 500-row bulkUpsert, where
+        // it takes the whole batch down with an exception nobody is catching.
+        $http = StubHttpClient::json(200, ['data' => []]);
+        $client = new GurbClient(self::KEY, 'https://x.test', $http);
+
+        try {
+            $client->members->bulkUpsert([new BulkMemberInput('u1', "Sara \x80\x80")]);
+            self::fail('Expected a GurbApiException.');
+        } catch (GurbApiException $e) {
+            self::assertSame(GurbErrorCode::VALIDATION_ERROR, $e->code());
+            self::assertSame(0, $e->status(), 'nothing was sent');
+            self::assertFalse($e->isRetryable(), 'the same bytes will fail the same way');
+            self::assertStringContainsString('UTF-8', $e->getMessage(), 'the message names the usual cause');
+        }
+
+        self::assertCount(0, $http->calls, 'the failure happens before the transport is touched');
     }
 
     #[Test]

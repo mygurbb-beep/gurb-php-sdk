@@ -48,8 +48,25 @@ foreach ($feed as $tweet) {
 ```
 
 Available: `community->get()`, and `list(page:, limit:)` on `tweets`, `events` (plus `upcoming:`),
-`blogs`, `albums`, `members` (plus `role:`). Lists return `Paginated`, which is iterable and
-countable and carries `->items`, `->page`, `->limit`, `->total`, `->hasMore`.
+`blogs`, `albums`, `groups`, `consultants`, `projects`, `projects2`, `awards`, and `members` (plus
+`role:`). Lists return `Paginated`, which is iterable and countable and carries `->items`, `->page`,
+`->limit`, `->total`, `->hasMore`.
+
+Three things about those sections that will otherwise look like bugs:
+
+- **`projects2` is a parallel module, not a newer `projects`.** A community may run either or
+  both, and nothing in a response tells you which. Read both and merge if you do not know — they
+  publish the same `Project` shape. A client that reads only one returns an empty list for half
+  the platform, and that looks like "no projects" rather than "wrong module".
+- **`Consultant::$title` and `Award::$awardedAt` are always `null` today**, and deliberately so.
+  A consultant row is an offered *service*, not a person, so there is no title column; `awards` is
+  the *catalogue* of medals a community defines, and when one was granted is a property of the
+  grant, not of the definition. Both stay in the shape so the contract need not change when a real
+  source arrives. Do not substitute `createdAt` for `awardedAt` — that is when the medal was
+  defined.
+- **`groups` includes private groups**, flagged by `$group->isPrivate` rather than filtered out.
+  Your key acts for the community, so its own private groups are its business; deciding what to
+  render to end users is yours.
 
 The key is pinned to one community — no method on `GurbClient` takes a `$communityId`, and a key can
 never read a community other than the one it was minted for.
@@ -153,6 +170,11 @@ $request->isPending();     // true — this is a request, not a community
 $request->communityId;     // null until approved
 ```
 
+`CreateCommunityInput` carries **a name and a slug, and nothing else** — the same two fields
+`$admin->communities->create()` takes, and with the same rules. `description`, `type` and
+`ownerUserId` were removed in 0.4.0 rather than accepted and ignored. `$request->description`
+still exists on the way *back*, because requests filed before that release carry one.
+
 Do not assume success. Poll, or subscribe to the `community.approved` webhook:
 
 ```php
@@ -178,7 +200,7 @@ $admin = new GurbAdminClient(getenv('GURB_ADMIN_KEY'));
 
 // Communities
 $admin->communities->list(search: 'club');
-$admin->communities->create(new CreateCommunityInput(name: 'مجتمع', slug: 'club'));
+$admin->communities->create(name: 'مجتمع القراءة', slug: 'book-club');   // two fields, both required
 
 // The approval queue
 $admin->communityRequests->list(CommunityRequestStatus::Pending);
@@ -191,6 +213,33 @@ $admin->apiKeys->list(communityId: 'cmt_1');
 $minted = $admin->apiKeys->create('cmt_1', 'zapier-prod');   // defaults to [read]
 $admin->apiKeys->revoke($minted->id);
 ```
+
+### Creating a community takes exactly two fields
+
+`create(name:, slug:)` and nothing else. There is no `$description`, no `$type` and no
+`$ownerUserId`, because the endpoint does not honour them: **visibility is decided server-side
+(PRIVATE) and the owner is taken from the credential that made the call.** Accepting those and
+dropping them would be worse than not offering them — a caller who passes `type: 'PUBLIC'`, gets a
+private community and no error has been lied to by an API that looked like it was listening. Adjust
+the rest afterwards through the dashboard or the community settings endpoints.
+
+- **`name`** is the human-facing name, usually Arabic. Required, trimmed before sending, at most
+  **100 characters** — counted as characters, not bytes, so a 100-character Arabic name fits.
+- **`slug`** is the latin identifier in the URL. Lowercase letters, digits and hyphens only, **3–50
+  characters**, no leading or trailing hyphen, no consecutive hyphens.
+
+The slug is checked **before any HTTP call**, and the message names the rule you broke rather than
+saying "invalid slug" — including the common one:
+
+```php
+$admin->communities->create(name: 'نادي', slug: 'Book-Club');
+// GurbApiException: Community slugs are lowercase: "Book-Club" is not valid,
+// but "book-club" would be. …   (code VALIDATION_ERROR, status 0)
+```
+
+Status `0` is the tell: nothing was sent, so nothing was created. Uniqueness is *not* checked
+locally — a client cannot know it — so a taken slug still arrives as a `400 VALIDATION_ERROR` from
+the server, and that is a normal form error rather than an exceptional condition.
 
 `$minted->key` is the plaintext key and it is shown **exactly once**. There is no read-back route, by
 design: if the secret could be fetched again, read access to your admin surface would be equivalent
@@ -379,12 +428,19 @@ docker run --rm -v "$PWD":/app -w /app php:8.2-cli php vendor/bin/phpunit
 Tests never touch the network: they inject `StubHttpClient`, which is a real transport rather than a
 mock, so the code under test takes exactly the path it takes in production.
 
+That proves the SDK builds the right request; it cannot prove a server would accept it. The other
+half lives in [`contract/`](contract/README.md), which drives this SDK over **real HTTP** against the
+TypeScript SDK's reference mock and asserts the verb, URL, headers, body bytes and status of every
+endpoint. Run it whenever you touch a path or a payload.
+
 ## Status
 
 The typed clients, the error mapping and the snippet renderer are implemented and tested. The backend
 endpoints they call are being built separately; until they ship, the SDK is exercised against a
 stubbed transport in the unit suite and against the reference mock server
-(`examples/host-demo/mock-gurb.mjs` in the TypeScript SDK repo) over real HTTP.
+(`examples/host-demo/mock-gurb.mjs` in the TypeScript SDK repo) over real HTTP — see
+[`contract/`](contract/README.md). Release history is in [CHANGELOG.md](CHANGELOG.md); this package
+tracks `@gurb/server` version for version.
 
 This package behaves identically on the wire to `@gurb/server`. Both were written against the same
 route contract, and the shared pieces — the two key patterns, the `X-Api-Key` header, the

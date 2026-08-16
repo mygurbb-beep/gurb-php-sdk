@@ -119,7 +119,21 @@ final class Requester
 
         $encodedBody = null;
         if ($body !== null) {
-            $encodedBody = \json_encode($body, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+            try {
+                $encodedBody = \json_encode($body, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
+            } catch (\JsonException $e) {
+                // Almost always malformed UTF-8 in a string the caller took from
+                // their own database — a latin-1 display name in a 500-row
+                // bulkUpsert is the realistic case. Without this catch a raw
+                // JsonException escapes the SDK, which breaks the one promise
+                // this library makes about errors: catch GurbApiException and you
+                // have caught everything. VALIDATION_ERROR at status 0 because
+                // the argument is what is wrong and nothing was ever sent.
+                throw GurbApiException::localValidation(
+                    'The request body could not be encoded as JSON: ' . $e->getMessage()
+                    . '. The usual cause is text that is not valid UTF-8 — convert it before sending.',
+                );
+            }
             $headers['Content-Type'] = 'application/json';
         }
 

@@ -114,18 +114,93 @@ $albums = $gurb->albums->list();
 $wire($c, $rec, 'GET', "{$base}/api/sdk/albums", null, 200, $COMMUNITY_KEY, 'GET sdk/albums');
 $c->same(24, $albums->items[0]->photoCount, 'album photoCount');
 
-// blogs is the mock's plan-gated module: a designed 403.
-$c->group('feature gate');
-try {
-    $gurb->blogs->list();
-    $c->true(false, 'GET sdk/blogs should have thrown');
-} catch (GurbApiException $e) {
-    $wire($c, $rec, 'GET', "{$base}/api/sdk/blogs", null, 403, $COMMUNITY_KEY, 'GET sdk/blogs');
-    $c->same(GurbErrorCode::FEATURE_NOT_AVAILABLE, $e->code(), 'declared code passes through');
-    $c->same(403, $e->status(), 'status preserved');
-    $c->same('req_demo_403', $e->requestId(), 'requestId surfaced');
-    $c->true(!$e->isRetryable(), 'a plan gate is not retryable');
+$blogs = $gurb->blogs->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/blogs", null, 200, $COMMUNITY_KEY, 'GET sdk/blogs');
+$c->same(2, \count($blogs), 'blogs decoded');
+$c->same('usr_1', $blogs->items[0]->author->userId, 'a blog carries an Author');
+$c->true($blogs->items[0]->publishedAt !== null, 'publishedAt present on a published post');
+
+// ═════ 2b. The five sections added alongside the original four ═══════════════
+$c->group('groups');
+$groups = $gurb->groups->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/groups", null, 200, $COMMUNITY_KEY, 'GET sdk/groups');
+$c->same(2, \count($groups), 'both groups returned');
+$c->same('grp_1', $groups->items[0]->id, 'group id');
+$c->same(42, $groups->items[0]->memberCount, 'memberCount is an int');
+$c->same(false, $groups->items[0]->isPrivate, 'isPrivate decodes as a bool');
+$c->same(null, $groups->items[0]->description, 'nullable description');
+// The rule worth a check of its own: a private group is LISTED, not hidden. An
+// SDK caller acts for the community, so filtering here would hand back half a
+// list with nothing in the response to say so.
+$c->same(true, $groups->items[1]->isPrivate, 'the private group came back');
+$c->same('مجلس الإدارة', $groups->items[1]->name, 'and it is the private one, not a placeholder');
+
+$c->group('consultants');
+$consultants = $gurb->consultants->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/consultants", null, 200, $COMMUNITY_KEY, 'GET sdk/consultants');
+$c->same(1, \count($consultants), 'one listing');
+$consultant = $consultants->items[0];
+$c->same('con_1', $consultant->id, 'consultant id');
+$c->same('استشارة قانونية', $consultant->displayName, 'displayName');
+$c->same(['قانون', 'عقود'], $consultant->specialties, 'specialties comes from a relation');
+// The field that is always null today: it must arrive as null and not as "".
+$c->same(null, $consultant->title, 'title is null — the table models a service, not a person');
+$c->true($consultant->title !== '', 'null, not an empty string');
+
+$c->group('projects');
+$projects = $gurb->projects->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/projects", null, 200, $COMMUNITY_KEY, 'GET sdk/projects');
+$c->same('prj_1', $projects->items[0]->id, 'project id');
+$c->same('ACTIVE', $projects->items[0]->status, 'free-form status');
+
+$projects2 = $gurb->projects2->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/projects2", null, 200, $COMMUNITY_KEY, 'GET sdk/projects2');
+// Different ids from two different endpoints is the proof that projects2 is a
+// parallel module and not an alias — pointing it at sdk/projects would make a
+// community that runs only the second module read as having no projects at all.
+$c->same('pr2_1', $projects2->items[0]->id, 'projects2 is its own module, not an alias for projects');
+$c->true($projects2->items[0]->id !== $projects->items[0]->id, 'the two modules return different rows');
+
+$c->group('awards');
+$awards = $gurb->awards->list();
+$wire($c, $rec, 'GET', "{$base}/api/sdk/awards", null, 200, $COMMUNITY_KEY, 'GET sdk/awards');
+$c->same('awd_1', $awards->items[0]->id, 'award id');
+$c->same('وسام العطاء', $awards->items[0]->title, 'award title');
+// Always null: this is the catalogue of medals, not a record of granting one.
+$c->same(null, $awards->items[0]->awardedAt, 'awardedAt is null on the catalogue');
+$c->true($awards->items[0]->awardedAt !== '', 'null, not an empty string');
+$c->true($awards->items[0]->createdAt !== '', 'createdAt is real — it is when the medal was defined');
+
+// Pagination behaves identically across all nine sections.
+$c->group('pagination parity');
+foreach (['tweets', 'events', 'blogs', 'albums', 'groups', 'consultants', 'projects', 'projects2', 'awards'] as $section) {
+    $page = $gurb->{$section}->list(page: 1, limit: 1);
+    $wire($c, $rec, 'GET', "{$base}/api/sdk/{$section}?page=1&limit=1", null, 200, $COMMUNITY_KEY, "GET sdk/{$section} paged");
+    $c->same(1, $page->page, "{$section}: page echoed");
+    $c->same(1, $page->limit, "{$section}: limit honoured");
+    $c->true(\count($page) <= 1, "{$section}: at most one item on a limit=1 page");
 }
+
+// ═════ 2c. The plan gate ═════════════════════════════════════════════════════
+// The mock now gates blogs only behind `?gated=1`, because a permanently-403
+// endpoint could not also be a real listable section. No SDK method can send
+// that flag — correctly, it is not part of the contract — so the gate is probed
+// directly and the RESPONSE is fed through the SDK's own mapper. What is under
+// test here is the mapping, which is the part that belongs to the SDK.
+$c->group('feature gate');
+$gateProbe = new Recording();
+$gated = $gateProbe->send(new HttpRequest(
+    'GET',
+    "{$base}/api/sdk/blogs?gated=1",
+    ['X-Api-Key' => $COMMUNITY_KEY, 'Accept' => 'application/json'],
+    null,
+    5000,
+));
+$c->same(403, $gated->status, 'the plan gate answers 403');
+$gateError = GurbApiException::fromResponse($gated->status, \json_decode($gated->body, true));
+$c->same(GurbErrorCode::FEATURE_NOT_AVAILABLE, $gateError->code(), 'a declared code passes through unchanged');
+$c->same('req_demo_403', $gateError->requestId(), 'requestId surfaced');
+$c->true(!$gateError->isRetryable(), 'a plan gate is not retryable');
 
 // ═════ 3. Members ════════════════════════════════════════════════════════════
 $c->group('members');
@@ -257,14 +332,14 @@ $suffix = \bin2hex(\random_bytes(3));
 $pending = $gurb->requestCommunityCreation(new CreateCommunityInput(
     name: 'نادي القراءة',
     slug: "php-pending-{$suffix}",
-    description: 'وصف',
 ));
 $wire(
     $c,
     $rec,
     'POST',
     "{$base}/api/sdk/community-requests",
-    ['name' => 'نادي القراءة', 'slug' => "php-pending-{$suffix}", 'description' => 'وصف'],
+    // Two fields here too: both community-creation paths narrowed together.
+    ['name' => 'نادي القراءة', 'slug' => "php-pending-{$suffix}"],
     201,
     $COMMUNITY_KEY,
     'POST sdk/community-requests',
@@ -282,7 +357,8 @@ $queue = $gurb->communityRequests->list(CommunityRequestStatus::Pending);
 $wire($c, $rec, 'GET', "{$base}/api/sdk/community-requests?status=PENDING", null, 200, $COMMUNITY_KEY, 'GET sdk/community-requests?status');
 $c->true($queue->total >= 1, 'the filed request is in the queue');
 
-// Optional fields absent means absent, not null.
+// A second request, used below to exercise rejection. There is nothing optional
+// left on this input — that is the point of the 0.4.0 narrowing.
 $bare = $gurb->requestCommunityCreation(new CreateCommunityInput(name: 'Bare', slug: "php-bare-{$suffix}"));
 $wire(
     $c,
@@ -292,8 +368,10 @@ $wire(
     ['name' => 'Bare', 'slug' => "php-bare-{$suffix}"],
     201,
     $COMMUNITY_KEY,
-    'POST sdk/community-requests (no optionals)',
+    'POST sdk/community-requests (second)',
 );
+$sentRequestBody = \json_decode($rec->last()['req']->body ?? '', true);
+$c->same(['name', 'slug'], \array_keys(\is_array($sentRequestBody) ? $sentRequestBody : []), 'exactly two keys on the request path too');
 
 // A taken slug is an ordinary VALIDATION_ERROR, from the server this time.
 try {
@@ -313,25 +391,64 @@ $c->true($all->total >= 1, 'the admin key lists across tenants');
 $searched = $admin->communities->list(search: 'demo');
 $wire($c, $adminRec, 'GET', "{$base}/api/admin/sdk/communities?search=demo", null, 200, $ADMIN_KEY, 'GET admin/sdk/communities?search');
 
-$created = $admin->communities->create(new CreateCommunityInput(
-    name: 'مجتمع فوري',
-    slug: "php-admin-{$suffix}",
-    type: 'PUBLIC',
-    ownerUserId: 'usr_owner',
-));
+// Two fields, and the body is asserted whole: the endpoint ignores what it does
+// not know, so an extra key would be silently discarded rather than refused.
+$created = $admin->communities->create(name: 'مجتمع فوري', slug: "php-admin-{$suffix}");
 $wire(
     $c,
     $adminRec,
     'POST',
     "{$base}/api/admin/sdk/communities",
-    ['name' => 'مجتمع فوري', 'slug' => "php-admin-{$suffix}", 'type' => 'PUBLIC', 'ownerUserId' => 'usr_owner'],
+    ['name' => 'مجتمع فوري', 'slug' => "php-admin-{$suffix}"],
     201,
     $ADMIN_KEY,
     'POST admin/sdk/communities',
 );
-$c->same('PUBLIC', $created->type, 'admin create returns a Community, not a request');
 $c->true($created->id !== '', 'the community exists immediately');
+$c->same('PRIVATE', $created->type, 'visibility is decided server-side, and it decides PRIVATE');
 $c->true(!\str_contains($adminRec->last()['req']->body ?? '', '\\u'), 'Arabic survives unescaped in the body');
+
+$sentBody = \json_decode($adminRec->last()['req']->body ?? '', true);
+$c->same(['name', 'slug'], \array_keys(\is_array($sentBody) ? $sentBody : []), 'exactly two keys on the wire');
+
+// A taken slug is the server's job, not the local guard's — the local rules are
+// about grammar, and uniqueness is not something a client can know.
+try {
+    $admin->communities->create(name: 'مكرر', slug: 'demo');
+    $c->true(false, 'a taken slug should have thrown');
+} catch (GurbApiException $e) {
+    $c->same(400, $e->status(), 'a taken slug is a server-side 400');
+    $c->same(GurbErrorCode::VALIDATION_ERROR, $e->code(), 'and maps to VALIDATION_ERROR');
+}
+
+// Local slug and name rules: each must fail without opening a socket.
+$c->group('community create guards');
+$beforeAdmin = \count($adminRec->calls);
+$createGuard = static function (Checks $c, GurbAdminClient $admin, string $name, string $slug, string $needle, string $label): void {
+    try {
+        $admin->communities->create(name: $name, slug: $slug);
+        $c->true(false, "{$label}: should have thrown");
+    } catch (GurbApiException $e) {
+        $c->same(GurbErrorCode::VALIDATION_ERROR, $e->code(), "{$label}: code");
+        $c->same(0, $e->status(), "{$label}: status 0 — no server ever saw it");
+        $c->true(\str_contains($e->getMessage(), $needle), "{$label}: message names the rule");
+    }
+};
+
+$createGuard($c, $admin, 'نادي', '', 'A community slug is required', 'empty slug');
+$createGuard($c, $admin, 'نادي', 'Book-Club', 'Community slugs are lowercase', 'uppercase slug');
+$createGuard($c, $admin, 'نادي', 'book club', 'lowercase letters (a-z)', 'space in slug');
+$createGuard($c, $admin, 'نادي', 'book_club', 'lowercase letters (a-z)', 'underscore in slug');
+$createGuard($c, $admin, 'نادي', 'نادي', 'lowercase letters (a-z)', 'arabic slug');
+$createGuard($c, $admin, 'نادي', '-book', 'may not start or end with a hyphen', 'leading hyphen');
+$createGuard($c, $admin, 'نادي', 'book-', 'may not start or end with a hyphen', 'trailing hyphen');
+$createGuard($c, $admin, 'نادي', 'book--club', 'may not contain consecutive hyphens', 'consecutive hyphens');
+$createGuard($c, $admin, 'نادي', 'ab', 'must be 3 to 50 characters', 'slug too short');
+$createGuard($c, $admin, 'نادي', \str_repeat('a', 51), 'must be 3 to 50 characters', 'slug too long');
+$createGuard($c, $admin, '', 'book-club', 'A community name is required', 'empty name');
+$createGuard($c, $admin, '   ', 'book-club', 'cannot be only whitespace', 'whitespace-only name');
+$createGuard($c, $admin, \str_repeat('ن', 101), 'book-club', 'at most 100 characters', 'name too long');
+$c->same($beforeAdmin, \count($adminRec->calls), 'not one create guard reached the network');
 
 // ═════ 8. Admin: the approval queue ══════════════════════════════════════════
 $c->group('admin requests');

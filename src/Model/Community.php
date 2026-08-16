@@ -27,6 +27,15 @@ final class Community
         public readonly string $type,
         public readonly int $memberCount,
         public readonly string $createdAt,
+        /**
+         * Who owns this, and how the server arrived at them.
+         *
+         * Null on every read, and on a create that did not carry an
+         * `ExternalOwner` — it is not a property of a community, it is a report
+         * about one call. See CommunityOwner: the LINKED outcome in particular
+         * is worth branching on.
+         */
+        public readonly ?CommunityOwner $owner = null,
     ) {
     }
 
@@ -48,6 +57,9 @@ final class Community
             type: Decode::str($data, 'type', 'PRIVATE'),
             memberCount: Decode::int($data, 'memberCount'),
             createdAt: Decode::str($data, 'createdAt'),
+            owner: \is_array($data['owner'] ?? null)
+                ? CommunityOwner::fromArray($data['owner'])
+                : null,
         );
     }
 }

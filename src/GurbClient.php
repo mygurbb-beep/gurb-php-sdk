@@ -11,11 +11,16 @@ use Gurb\Internal\Requester;
 use Gurb\Model\CommunityRequest;
 use Gurb\Model\EmbedSession;
 use Gurb\Resource\AlbumsResource;
+use Gurb\Resource\AwardsResource;
 use Gurb\Resource\BlogsResource;
 use Gurb\Resource\CommunityRequestsResource;
 use Gurb\Resource\CommunityResource;
+use Gurb\Resource\ConsultantsResource;
 use Gurb\Resource\EventsResource;
+use Gurb\Resource\GroupsResource;
 use Gurb\Resource\MembersResource;
+use Gurb\Resource\Projects2Resource;
+use Gurb\Resource\ProjectsResource;
 use Gurb\Resource\TweetsResource;
 
 /**
@@ -41,6 +46,12 @@ final class GurbClient
     public readonly EventsResource $events;
     public readonly BlogsResource $blogs;
     public readonly AlbumsResource $albums;
+    public readonly GroupsResource $groups;
+    public readonly ConsultantsResource $consultants;
+    public readonly ProjectsResource $projects;
+    /** The parallel projects module — not a newer `projects`. See Projects2Resource. */
+    public readonly Projects2Resource $projects2;
+    public readonly AwardsResource $awards;
     public readonly MembersResource $members;
 
     /**
@@ -86,6 +97,11 @@ final class GurbClient
         $this->events = new EventsResource($this->requester);
         $this->blogs = new BlogsResource($this->requester);
         $this->albums = new AlbumsResource($this->requester);
+        $this->groups = new GroupsResource($this->requester);
+        $this->consultants = new ConsultantsResource($this->requester);
+        $this->projects = new ProjectsResource($this->requester);
+        $this->projects2 = new Projects2Resource($this->requester);
+        $this->awards = new AwardsResource($this->requester);
         $this->members = new MembersResource($this->requester);
     }
 

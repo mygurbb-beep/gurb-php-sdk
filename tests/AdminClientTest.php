@@ -114,7 +114,7 @@ final class AdminClientTest extends TestCase
         $http = StubHttpClient::json(201, ['data' => ['id' => 'cmt_1', 'slug' => 'new', 'type' => 'PRIVATE']]);
         $admin = new GurbAdminClient(self::ADMIN_KEY, 'https://x.test', $http);
 
-        $community = $admin->communities->create(new CreateCommunityInput(name: 'جديد', slug: 'new'));
+        $community = $admin->communities->create(name: 'جديد', slug: 'new');
 
         self::assertSame('https://x.test/api/admin/sdk/communities', $http->lastCall()->url);
         self::assertSame('POST', $http->lastCall()->method);
@@ -142,19 +142,22 @@ final class AdminClientTest extends TestCase
     }
 
     #[Test]
-    public function a_community_creation_input_omits_absent_optional_fields(): void
+    public function creating_a_community_sends_exactly_name_and_slug(): void
     {
         $http = StubHttpClient::json(201, ['data' => []]);
         $admin = new GurbAdminClient(self::ADMIN_KEY, 'https://x.test', $http);
 
-        $admin->communities->create(new CreateCommunityInput(name: 'نادي', slug: 'club', type: 'PRIVATE'));
+        $admin->communities->create(name: 'نادي', slug: 'club');
 
         $body = \json_decode((string) $http->lastCall()->body, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['name' => 'نادي', 'slug' => 'club', 'type' => 'PRIVATE'], $body);
-        // Absent, not null: the backend's optional-field validation treats
-        // "explicitly null" as a value it has to reject.
+        // The whole body, asserted as a whole. An extra key here is not a
+        // harmless addition: the endpoint ignores what it does not know, so a
+        // field that creeps back in would be silently discarded and the caller
+        // would believe it took effect.
+        self::assertSame(['name' => 'نادي', 'slug' => 'club'], $body);
         self::assertArrayNotHasKey('description', $body);
-        self::assertArrayNotHasKey('ownerUserId', $body);
+        self::assertArrayNotHasKey('type', $body, 'visibility is decided server-side');
+        self::assertArrayNotHasKey('ownerUserId', $body, 'the owner comes from the credential');
     }
 
     #[Test]
@@ -163,7 +166,7 @@ final class AdminClientTest extends TestCase
         $http = StubHttpClient::json(201, ['data' => []]);
         $admin = new GurbAdminClient(self::ADMIN_KEY, 'https://x.test', $http);
 
-        $admin->communities->create(new CreateCommunityInput(name: 'مجتمع المتجر', slug: 'shop'));
+        $admin->communities->create(name: 'مجتمع المتجر', slug: 'shop');
 
         // JSON_UNESCAPED_UNICODE in the Requester. Not cosmetic: \u-escaped
         // Arabic is three times the bytes and unreadable in a request log, and
