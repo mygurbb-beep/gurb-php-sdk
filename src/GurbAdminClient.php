@@ -6,6 +6,7 @@ namespace Gurb;
 
 use Gurb\Http\HttpClient;
 use Gurb\Internal\Requester;
+use Gurb\Model\SdkIdentity;
 use Gurb\Resource\Admin\AdminApiKeysResource;
 use Gurb\Resource\Admin\AdminCommunitiesResource;
 use Gurb\Resource\Admin\AdminCommunityRequestsResource;
@@ -97,4 +98,41 @@ final class GurbAdminClient
      * community key for that community and build a GurbClient with it. The extra
      * step is the audit trail.
      */
+
+    /**
+     * WHO THIS KEY ACTS FOR. Make this your first call.
+     *
+     * It answers the one question you cannot answer from the key string itself:
+     * was the key you were handed actually set up FOR you, or does it still act
+     * for the platform admin who minted it?
+     *
+     * That matters before anything irreversible. A platform key can only be
+     * minted BY a super admin, so a key with no subject founds every community
+     * in the admin's name — the customer ends up owning nothing, and nobody
+     * notices until someone asks why their community belongs to someone else.
+     *
+     * ```php
+     * $me = $admin->me();
+     * if ($me->actsForIssuer) {
+     *     throw new RuntimeException(
+     *         'This key has no subject — anything I create will belong to the platform admin.'
+     *     );
+     * }
+     * $owner = $me->effectiveOwner();   // email, display name, phone
+     * ```
+     *
+     * `effectiveOwner()->phone` is never null: an account with no number reports
+     * a run of zeros with `phoneIsPlaceholder` set, so a profile card has a field
+     * of the right shape to render. Use `realPhone()` when you need the truth.
+     *
+     * A 200 proves the key is live and names a real, active account. It proves
+     * nothing about permissions — those are checked per operation and differ per
+     * section by design.
+     *
+     * @throws GurbApiException
+     */
+    public function me(): SdkIdentity
+    {
+        return SdkIdentity::fromArray($this->requester->request('GET', 'admin/sdk/me'));
+    }
 }

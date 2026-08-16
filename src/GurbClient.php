@@ -10,17 +10,22 @@ use Gurb\Input\CreateCommunityInput;
 use Gurb\Internal\Requester;
 use Gurb\Model\CommunityRequest;
 use Gurb\Model\EmbedSession;
+use Gurb\Resource\AdvertisementsResource;
 use Gurb\Resource\AlbumsResource;
 use Gurb\Resource\AwardsResource;
 use Gurb\Resource\BlogsResource;
+use Gurb\Resource\CommentsResource;
 use Gurb\Resource\CommunityRequestsResource;
 use Gurb\Resource\CommunityResource;
 use Gurb\Resource\ConsultantsResource;
 use Gurb\Resource\EventsResource;
 use Gurb\Resource\GroupsResource;
+use Gurb\Resource\LikesResource;
 use Gurb\Resource\MembersResource;
 use Gurb\Resource\Projects2Resource;
 use Gurb\Resource\ProjectsResource;
+use Gurb\Resource\SidebarResource;
+use Gurb\Resource\TasksResource;
 use Gurb\Resource\TweetsResource;
 
 /**
@@ -52,6 +57,15 @@ final class GurbClient
     /** The parallel projects module — not a newer `projects`. See Projects2Resource. */
     public readonly Projects2Resource $projects2;
     public readonly AwardsResource $awards;
+    public readonly TasksResource $tasks;
+    /** Comments on tweets, blogs, albums and events — and the likes ON comments. */
+    public readonly CommentsResource $comments;
+    /** Likes on tweets, blogs and albums. There is no event like; see LikeParent. */
+    public readonly LikesResource $likes;
+    /** The navigation menu. Gated on the homepage-widgets plan feature, reads included. */
+    public readonly SidebarResource $sidebar;
+    /** Ad placements. Gated on the ads-management plan feature, reads included. */
+    public readonly AdvertisementsResource $advertisements;
     public readonly MembersResource $members;
 
     /**
@@ -102,6 +116,11 @@ final class GurbClient
         $this->projects = new ProjectsResource($this->requester);
         $this->projects2 = new Projects2Resource($this->requester);
         $this->awards = new AwardsResource($this->requester);
+        $this->tasks = new TasksResource($this->requester);
+        $this->comments = new CommentsResource($this->requester);
+        $this->likes = new LikesResource($this->requester);
+        $this->sidebar = new SidebarResource($this->requester);
+        $this->advertisements = new AdvertisementsResource($this->requester);
         $this->members = new MembersResource($this->requester);
     }
 

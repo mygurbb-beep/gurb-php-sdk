@@ -30,6 +30,26 @@ final class Group
          */
         public readonly bool $isPrivate,
         public readonly string $createdAt,
+        /**
+         * WRITE RESPONSES ONLY — null on every row from `list()`.
+         *
+         * `GET /sdk/groups` publishes seven fields and this is not one of them;
+         * `POST`/`PATCH /sdk/groups` publish four more, of which this is one. A
+         * null here is a fact about the endpoint you called, NOT a group without
+         * an icon — the icon is required at creation, so no group has none.
+         */
+        public readonly ?string $iconUrl = null,
+        /**
+         * The membership CAP, write responses only. `-1` means unlimited.
+         *
+         * NOT the roster size. `$memberCount` above is the roster on both the
+         * read and the write; internally the same word means the cap, and
+         * publishing that under one name would give one field two meanings on
+         * one surface. Null means "this endpoint did not publish it".
+         */
+        public readonly ?int $memberLimit = null,
+        /** Whether the group has a chat. Write responses only; null on a list row. */
+        public readonly ?bool $canChat = null,
     ) {
     }
 
@@ -48,6 +68,9 @@ final class Group
             // rendering omission, where one wrongly treated as public is a leak.
             isPrivate: Decode::bool($data, 'isPrivate', true),
             createdAt: Decode::str($data, 'createdAt'),
+            iconUrl: Decode::nullableStr($data, 'iconUrl'),
+            memberLimit: \is_numeric($data['memberLimit'] ?? null) ? (int) $data['memberLimit'] : null,
+            canChat: Decode::nullableBool($data, 'canChat'),
         );
     }
 }

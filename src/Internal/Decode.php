@@ -75,6 +75,24 @@ final class Decode
     }
 
     /**
+     * A boolean that stays NULL when the key is absent.
+     *
+     * The difference from `bool()` matters on the fields a WRITE response
+     * publishes and a READ does not — `Group::$canChat`, `Consultant::$isActive`.
+     * A default of `true` there would claim "this group has chat" about a list
+     * row that never mentioned chat at all, which is a fact invented by a
+     * decoder rather than reported by the server.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function nullableBool(array $data, string $key): ?bool
+    {
+        $value = $data[$key] ?? null;
+
+        return \is_bool($value) ? $value : null;
+    }
+
+    /**
      * A list of strings, with non-strings dropped rather than coerced.
      *
      * @param array<string, mixed> $data

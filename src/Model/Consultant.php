@@ -40,6 +40,25 @@ final class Consultant
          */
         public readonly array $specialties,
         public readonly string $createdAt,
+        /**
+         * WRITE RESPONSES ONLY — null on every row from `list()`.
+         *
+         * `GET /sdk/consultants` publishes seven fields; the write publishes five
+         * more, and these are they. A null is a fact about the endpoint you
+         * called, not about the consultant.
+         */
+        public readonly ?string $bannerUrl = null,
+        /** Where a client books. Write responses only. */
+        public readonly ?string $bookingUrl = null,
+        /**
+         * `DECIMAL(10,2)` upstream, so it may arrive as a JSON string — decoded
+         * with `Decode::nullableFloat`, which accepts both. Write responses only.
+         */
+        public readonly ?float $price = null,
+        /** `available`, `coming_soon`, `not_available` — LOWERCASE. Write responses only. */
+        public readonly ?string $status = null,
+        /** Write responses only; null on a list row. */
+        public readonly ?bool $isActive = null,
     ) {
     }
 
@@ -58,6 +77,11 @@ final class Consultant
             avatarUrl: Decode::nullableStr($data, 'avatarUrl'),
             specialties: Decode::strList($data, 'specialties'),
             createdAt: Decode::str($data, 'createdAt'),
+            bannerUrl: Decode::nullableStr($data, 'bannerUrl'),
+            bookingUrl: Decode::nullableStr($data, 'bookingUrl'),
+            price: Decode::nullableFloat($data, 'price'),
+            status: Decode::nullableStr($data, 'status'),
+            isActive: Decode::nullableBool($data, 'isActive'),
         );
     }
 }

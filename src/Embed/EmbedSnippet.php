@@ -51,7 +51,7 @@ final class EmbedSnippet
         string $slug,
         EmbedSection $section,
         string $token,
-        int $initialHeight = 600,
+        ?int $initialHeight = null,
         bool $autoResize = true,
     ): string {
         $this->assertNotASecret($token);
@@ -60,8 +60,13 @@ final class EmbedSnippet
             'target' => '#' . $targetId,
             'slug' => $slug,
             'section' => $section->value,
+            // Null rather than a literal 600, so the default follows the SHAPE
+            // being embedded. A whole community at 600px shows a navigation bar
+            // and little else for the moment before auto-resize lands, and that
+            // moment is when someone decides the integration is broken. Passing
+            // a number still wins — this only changes what "unspecified" means.
+            'initialHeight' => $initialHeight ?? $section->defaultHeight(),
             'baseUrl' => $this->baseUrl,
-            'initialHeight' => $initialHeight,
             'autoResize' => $autoResize,
             'token' => $token,
         ]);
@@ -95,6 +100,91 @@ final class EmbedSnippet
             'initialHeight' => $initialHeight,
             'autoResize' => $autoResize,
         ], tokenEndpoint: $tokenEndpoint);
+    }
+
+    /**
+     * A plain `<iframe>` and nothing else. NO external script, NO CDN, NO npm.
+     *
+     * USE THIS ONE. `render()` and `renderAsync()` load a loader script from
+     * unpkg, and that script's only real feature over this is auto-resizing the
+     * frame from a `postMessage` — which the Gurb embed page does not currently
+     * send. So the script costs a third-party CDN dependency on your page's
+     * critical path and buys nothing today.
+     *
+     * Everything that actually makes the embed work is here: the URL, the token
+     * in the fragment, and the frame.
+     *
+     * WHY THE FRAGMENT AND NOT A QUERY STRING
+     *
+     * A fragment is never transmitted to a server. Put the token in a query
+     * string instead and it lands in Gurb's nginx access log, in your own if you
+     * proxy, and in the `Referer` header of every outbound link the framed page
+     * renders. It is a live credential, so that is the difference between a
+     * short-lived secret and a logged one.
+     *
+     * @param string $token A token from GurbClient::createEmbedSession(). It is
+     *                      single-use and lives about 120 seconds, so mint it
+     *                      when you render the page — never cache this HTML.
+     * @param int|null $height Pixels. Defaults per shape: a whole community
+     *                         needs far more room than one pane.
+     * @param string $style Extra CSS for the frame. Appended after the defaults,
+     *                      so it wins.
+     *
+     * @return string HTML, safe to echo directly.
+     */
+    public function iframe(
+        EmbedSection $section,
+        string $token,
+        ?int $height = null,
+        string $style = '',
+    ): string {
+        $this->assertNotASecret($token);
+
+        $fragment = ['token' => $token];
+        // Omitted for the whole community: absence means "the community home",
+        // which is where the embed page sends an arriving member anyway. This
+        // matches the loader's contract exactly — see the boundary tests in
+        // @gurb/embed, which pin this shape on the other side.
+        if (!$section->isWholeCommunity()) {
+            $fragment['section'] = $section->value;
+        }
+
+        $src = \rtrim($this->baseUrl, '/') . '/embed#' . \http_build_query($fragment);
+
+        $attrs = [
+            'src' => $src,
+            'title' => 'Gurb — ' . $section->value,
+            'loading' => 'lazy',
+            'style' => \sprintf(
+                'width:100%%;height:%dpx;border:0;%s',
+                $height ?? $section->defaultHeight(),
+                $style,
+            ),
+            // Least privilege, and each of these is load-bearing:
+            //   allow-same-origin — WITHOUT IT THE EMBED CANNOT WORK AT ALL.
+            //     The page stores its session in sessionStorage and rewrites its
+            //     own URL; an opaque origin makes both throw.
+            //   allow-scripts     — it is a React app.
+            //   allow-forms       — posting, commenting, joining.
+            //   allow-popups + …popups-to-escape-sandbox — external links in
+            //     member content open as ordinary pages rather than inheriting
+            //     this sandbox.
+            // Deliberately ABSENT: allow-top-navigation. Nothing inside the
+            // frame should be able to navigate the host's page away.
+            'sandbox' => 'allow-same-origin allow-scripts allow-forms allow-popups '
+                . 'allow-popups-to-escape-sandbox',
+        ];
+
+        $rendered = '';
+        foreach ($attrs as $name => $value) {
+            $rendered .= \sprintf(
+                ' %s="%s"',
+                $name,
+                \htmlspecialchars($value, \ENT_QUOTES | \ENT_SUBSTITUTE, 'UTF-8'),
+            );
+        }
+
+        return '<iframe' . $rendered . '></iframe>';
     }
 
     /** @param array<string, mixed> $options */

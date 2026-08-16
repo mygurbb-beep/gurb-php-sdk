@@ -144,4 +144,85 @@ final class EmbedTest extends TestCase
         // not a credential.
         self::assertStringNotContainsString('"token"', $html);
     }
+
+    // ─── The script-free iframe ──────────────────────────────────────────────
+
+    #[Test]
+    public function the_iframe_helper_emits_NO_external_script(): void
+    {
+        // The whole point. render()/renderAsync() pull a loader from unpkg, and
+        // that loader's only feature over a plain frame is auto-resize driven by
+        // a postMessage the Gurb embed page does not send. So the CDN dependency
+        // buys nothing today, and this helper exists to avoid it entirely.
+        $html = (new EmbedSnippet('https://gurb.test'))
+            ->iframe(EmbedSection::Community, 'gurbe_' . \str_repeat('x', 43));
+
+        self::assertStringNotContainsString('<script', $html);
+        self::assertStringNotContainsString('unpkg', $html);
+        self::assertStringStartsWith('<iframe', $html);
+    }
+
+    #[Test]
+    public function the_token_rides_in_the_fragment_never_the_query_string(): void
+    {
+        // A query string reaches the server: Gurb's nginx log, your own proxy's
+        // log, and the Referer of every outbound link the framed page renders.
+        // The token is a live credential, so that is the difference between a
+        // short-lived secret and a logged one.
+        $token = 'gurbe_' . \str_repeat('x', 43);
+        $html = (new EmbedSnippet('https://gurb.test'))
+            ->iframe(EmbedSection::Community, $token);
+
+        self::assertStringContainsString('/embed#token=' . $token, $html);
+        self::assertStringNotContainsString('?token=', $html);
+    }
+
+    #[Test]
+    public function the_whole_community_omits_the_section_key(): void
+    {
+        // Absence means "the community home". This mirrors @gurb/embed's own
+        // boundary tests exactly — the two sides describe ONE contract, and
+        // changing either requires changing the other in the same commit.
+        $html = (new EmbedSnippet('https://gurb.test'))
+            ->iframe(EmbedSection::Community, 'gurbe_' . \str_repeat('x', 43));
+
+        self::assertStringNotContainsString('section=', $html);
+    }
+
+    #[Test]
+    public function a_single_pane_carries_its_section(): void
+    {
+        $html = (new EmbedSnippet('https://gurb.test'))
+            ->iframe(EmbedSection::Tweets, 'gurbe_' . \str_repeat('x', 43));
+
+        self::assertStringContainsString('section=tweets', $html);
+    }
+
+    #[Test]
+    public function the_whole_community_gets_more_room_than_a_pane(): void
+    {
+        $token = 'gurbe_' . \str_repeat('x', 43);
+        $snippet = new EmbedSnippet('https://gurb.test');
+
+        // At 600px a whole community shows a navigation bar and little else in
+        // the moment before anything resizes — and that moment is when someone
+        // decides the integration is broken.
+        self::assertStringContainsString('height:900px', $snippet->iframe(EmbedSection::Community, $token));
+        self::assertStringContainsString('height:600px', $snippet->iframe(EmbedSection::Tweets, $token));
+    }
+
+    #[Test]
+    public function the_sandbox_keeps_same_origin_and_refuses_top_navigation(): void
+    {
+        $html = (new EmbedSnippet('https://gurb.test'))
+            ->iframe(EmbedSection::Community, 'gurbe_' . \str_repeat('x', 43));
+
+        // WITHOUT allow-same-origin the embed cannot work at all: the page keeps
+        // its session in sessionStorage and rewrites its own URL, and an opaque
+        // origin makes both throw.
+        self::assertStringContainsString('allow-same-origin', $html);
+        self::assertStringContainsString('allow-scripts', $html);
+        // Nothing inside the frame may navigate the HOST page away.
+        self::assertStringNotContainsString('allow-top-navigation', $html);
+    }
 }
