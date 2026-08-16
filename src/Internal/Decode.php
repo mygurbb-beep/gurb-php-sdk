@@ -47,6 +47,25 @@ final class Decode
         return \is_int($value) ? $value : (\is_numeric($value) ? (int) $value : $default);
     }
 
+    /**
+     * A decimal that may arrive as a JSON number OR as a string.
+     *
+     * `Consultant.price` is `DECIMAL(10,2)` and Postgres drivers hand decimals
+     * back as strings often enough that a strict `is_float` check would read a
+     * real price as "absent". Anything non-numeric reads as null, which is the
+     * same tolerant posture the rest of this class takes.
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function nullableFloat(array $data, string $key): ?float
+    {
+        $value = $data[$key] ?? null;
+
+        return \is_int($value) || \is_float($value) || (\is_string($value) && \is_numeric($value))
+            ? (float) $value
+            : null;
+    }
+
     /** @param array<string, mixed> $data */
     public static function bool(array $data, string $key, bool $default = false): bool
     {
@@ -84,5 +103,68 @@ final class Decode
         $value = $data[$key] ?? null;
 
         return \is_array($value) ? $value : [];
+    }
+
+    /**
+     * A nested object, kept NULL when the key is absent.
+     *
+     * The difference from `obj()` matters on the settings shapes: `homeWidgets`
+     * is published as `null` when a community has never configured one, and an
+     * empty array would say "configured, and empty" instead.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function nullableObj(array $data, string $key): ?array
+    {
+        $value = $data[$key] ?? null;
+
+        return \is_array($value) ? $value : null;
+    }
+
+    /**
+     * A list of nested objects, with non-array entries dropped.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function rows(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        if (!\is_array($value)) {
+            return [];
+        }
+
+        return \array_values(\array_filter($value, \is_array(...)));
+    }
+
+    /**
+     * A map of `string => bool`, with non-boolean values dropped.
+     *
+     * `pageVisibility` is the only shape shaped like this, and dropping rather
+     * than coercing matters there: a stray `"false"` string coerced to `true`
+     * would report a hidden menu section as visible.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, bool>
+     */
+    public static function boolMap(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        if (!\is_array($value)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($value as $name => $flag) {
+            if (\is_bool($flag)) {
+                $map[(string) $name] = $flag;
+            }
+        }
+
+        return $map;
     }
 }
