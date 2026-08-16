@@ -40,10 +40,20 @@ final class EmbedSnippet
     /**
      * Print everything the page needs: a container, the loader, the mount call.
      *
-     * @param string $targetId     DOM id for the container div.
-     * @param string $token        A token from GurbClient::createEmbedSession().
-     * @param int    $initialHeight Height before the frame reports its own.
+     * Loads `@gurb/embed` from `$scriptUrl` (unpkg by default) and calls
+     * `GurbEmbed.mount()`. Use this when you want the loader's behaviour —
+     * auto-resize once the frame reports its height, and a single mount point
+     * you can restyle.
      *
+     * If you would rather not depend on an external script at all, `iframe()`
+     * emits a plain frame and loads nothing. Both reach the same Gurb page; they
+     * differ only in who builds the element.
+     *
+     * @param string $targetId      DOM id for the container div.
+     * @param string $token         A token from GurbClient::createEmbedSession().
+     * @param int|null $initialHeight Height before the frame reports its own.
+     *                               Defaults per section shape — a whole
+     *                               community needs far more room than one pane.
      * @return string HTML, safe to echo directly.
      */
     public function render(
@@ -62,7 +72,7 @@ final class EmbedSnippet
             'section' => $section->value,
             // Null rather than a literal 600, so the default follows the SHAPE
             // being embedded. A whole community at 600px shows a navigation bar
-            // and little else for the moment before auto-resize lands, and that
+            // and little else in the moment before auto-resize lands, and that
             // moment is when someone decides the integration is broken. Passing
             // a number still wins — this only changes what "unspecified" means.
             'initialHeight' => $initialHeight ?? $section->defaultHeight(),
@@ -79,6 +89,10 @@ final class EmbedSnippet
      * user for a while: a token baked into HTML is often already dead by the
      * time someone scrolls to the frame, and a dead token renders an empty pane
      * with no obvious cause.
+     *
+     * This one genuinely needs the loader script — fetching a token after page
+     * load is something only JavaScript can do, so `iframe()` is not an
+     * alternative here.
      *
      * @param string $tokenEndpoint A path on your own site that returns
      *                              `{"token": "..."}`. It must apply YOUR auth —
@@ -105,14 +119,12 @@ final class EmbedSnippet
     /**
      * A plain `<iframe>` and nothing else. NO external script, NO CDN, NO npm.
      *
-     * USE THIS ONE. `render()` and `renderAsync()` load a loader script from
-     * unpkg, and that script's only real feature over this is auto-resizing the
-     * frame from a `postMessage` — which the Gurb embed page does not currently
-     * send. So the script costs a third-party CDN dependency on your page's
-     * critical path and buys nothing today.
+     * Reach for this when you do not want a third-party script on your page's
+     * critical path, or when your CSP forbids one. Everything the embed actually
+     * needs is here: the URL, the token in the fragment, and the frame.
      *
-     * Everything that actually makes the embed work is here: the URL, the token
-     * in the fragment, and the frame.
+     * What you give up versus `render()` is the loader's auto-resize, so pick a
+     * `$height` that suits your layout — the frame will not grow by itself.
      *
      * WHY THE FRAGMENT AND NOT A QUERY STRING
      *

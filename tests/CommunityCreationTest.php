@@ -281,7 +281,10 @@ final class CommunityCreationTest extends TestCase
             $method->getParameters(),
         );
 
-        self::assertSame(['name', 'slug', 'owner'], $names);
+        self::assertSame(
+            ['name', 'slug', 'owner', 'ownerEmail', 'ownerFirstName', 'ownerFamilyName'],
+            $names,
+        );
 
         $byName = [];
         foreach ($method->getParameters() as $parameter) {
@@ -298,6 +301,12 @@ final class CommunityCreationTest extends TestCase
             $byName['owner']->isOptional(),
             'owner is opt-in: without it the calling credential founds the community',
         );
+        // The simple path. An integrator knows their own e-mail; nobody knows a
+        // uuid without looking it up, and a provider assertion is a whole
+        // registration step. Every hop between "I want a community" and "I own
+        // it" is a hop where it ends up owned by the platform admin instead.
+        self::assertTrue($byName['ownerEmail']->isOptional());
+        self::assertNull($byName['ownerEmail']->getDefaultValue());
         self::assertNull(
             $byName['owner']->getDefaultValue(),
             'the default must be null, not a fabricated owner',
@@ -416,5 +425,65 @@ final class CommunityCreationTest extends TestCase
         $client = new GurbClient(ApiKeyTest::KEY, 'https://x.test', $http);
 
         self::assertSame('وصف قديم', $client->communityRequests->get('creq_1')->description);
+    }
+
+    // ─── Founding by e-mail ──────────────────────────────────────────────────
+
+    #[Test]
+    public function an_owner_email_is_sent_lowercased_and_alone(): void
+    {
+        $http = StubHttpClient::json(201, ['data' => []]);
+        $this->admin($http)->communities->create(
+            name: 'نادي',
+            slug: 'book-club',
+            ownerEmail: '  Ahmed@Corp.com  ',
+        );
+
+        $body = \json_decode((string) $http->calls[0]->body, true);
+        self::assertSame(['name', 'slug', 'ownerEmail'], \array_keys($body));
+        // Trimmed here; the SERVER lowercases, because that is where the
+        // comparison against stored addresses happens. Sending it untrimmed
+        // would make "  a@b.com" a different account from "a@b.com".
+        self::assertSame('Ahmed@Corp.com', $body['ownerEmail']);
+    }
+
+    #[Test]
+    public function optional_owner_names_are_omitted_when_blank(): void
+    {
+        // Absence must mean absence. An empty string is a value the server has
+        // to interpret, and its answer would be a 400 for a field the caller
+        // simply left alone.
+        $http = StubHttpClient::json(201, ['data' => []]);
+        $this->admin($http)->communities->create(
+            name: 'نادي',
+            slug: 'book-club',
+            ownerEmail: 'a@b.com',
+            ownerFirstName: '   ',
+        );
+
+        $body = \json_decode((string) $http->calls[0]->body, true);
+        self::assertArrayNotHasKey('ownerFirstName', $body);
+    }
+
+    #[Test]
+    public function owner_and_ownerEmail_together_are_refused_before_any_request(): void
+    {
+        // They answer the same question two ways, and there is no useful
+        // behaviour for the contradiction. Refusing locally costs no round trip
+        // and names the distinction, which a server 400 could not.
+        $http = StubHttpClient::json(201, ['data' => []]);
+
+        try {
+            $this->admin($http)->communities->create(
+                name: 'نادي',
+                slug: 'book-club',
+                owner: new ExternalOwner('okta', '00u1', 'a@b.com', true),
+                ownerEmail: 'a@b.com',
+            );
+            self::fail('expected a local refusal');
+        } catch (\Gurb\GurbApiException $e) {
+            self::assertStringContainsString('not both', $e->getMessage());
+            self::assertCount(0, $http->calls);
+        }
     }
 }

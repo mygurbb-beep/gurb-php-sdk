@@ -125,12 +125,26 @@ final class AdminCommunitiesResource
      *                          schema is minted, precisely so a refused owner
      *                          does not leave an ownerless tenant behind.
      */
-    public function create(string $name, string $slug, ?ExternalOwner $owner = null): Community
-    {
+    public function create(
+        string $name,
+        string $slug,
+        ?ExternalOwner $owner = null,
+        ?string $ownerEmail = null,
+        ?string $ownerFirstName = null,
+        ?string $ownerFamilyName = null,
+    ): Community {
         $trimmedName = \trim($name);
         self::assertValidName($trimmedName, $name);
         self::assertValidSlug($slug);
         $owner?->assertValid();
+
+        $email = $ownerEmail !== null ? \trim($ownerEmail) : '';
+        if ($email !== '' && $owner !== null) {
+            throw GurbApiException::localValidation(
+                'Send either $owner or $ownerEmail, not both: the first asserts an identity '
+                . 'through a registered provider, the second names a Gurb account directly.',
+            );
+        }
 
         $body = [
             // Exactly these keys. Anything else the server would ignore, and an
@@ -138,6 +152,19 @@ final class AdminCommunitiesResource
             'name' => $trimmedName,
             'slug' => $slug,
         ];
+
+        if ($email !== '') {
+            $body['ownerEmail'] = $email;
+            // Only sent when given. An empty string would be a value the server
+            // has to interpret, and its answer would be a 400 for a field the
+            // caller simply left alone.
+            if ($ownerFirstName !== null && \trim($ownerFirstName) !== '') {
+                $body['ownerFirstName'] = \trim($ownerFirstName);
+            }
+            if ($ownerFamilyName !== null && \trim($ownerFamilyName) !== '') {
+                $body['ownerFamilyName'] = \trim($ownerFamilyName);
+            }
+        }
 
         if ($owner !== null) {
             $body['owner'] = $owner->toArray();

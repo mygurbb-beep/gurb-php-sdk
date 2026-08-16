@@ -71,6 +71,115 @@ Three things about those sections that will otherwise look like bugs:
 The key is pinned to one community — no method on `GurbClient` takes a `$communityId`, and a key can
 never read a community other than the one it was minted for.
 
+## Publish content
+
+Every read section that can be written, can be written.
+
+```php
+$tweet = $gurb->tweets->create('مرحباً بالجميع');
+$gurb->tweets->update($tweet->id, content: 'مرحباً بالجميع 👋');
+$gurb->tweets->delete($tweet->id);
+
+$gurb->events->create('Launch', 'التدشين', '2026-09-01T10:00:00Z', '2026-09-01T12:00:00Z');
+$gurb->blogs->create('عنوان', '<p>المحتوى</p>');
+$gurb->albums->create('رحلة الربيع');          // created EMPTY — see uploads below
+$gurb->groups->create('نادي القراءة', 'وصف', false, 'https://cdn.example/icon.png');
+$gurb->consultants->create('د. أحمد', 'https://cal.example/ahmed');
+$gurb->projects->create('مشروع', 'وصف');
+$gurb->awards->create('وسام المثابرة', 'trophy', '#E8B830');
+$gurb->tasks->create($headingId, 'راجع الطلبات');
+```
+
+Comments and likes hang off the thing they belong to:
+
+```php
+$gurb->comments->create(CommentParent::Tweets, $tweetId, 'شكراً');
+$gurb->likes->like(LikeParent::Blogs, $blogId);
+$state = $gurb->likes->state(LikeParent::Tweets, $tweetId);   // ->liked, ->count
+```
+
+### The permissions differ per section, and that is on purpose
+
+This SDK uses **the same permission Gurb's own web app checks** for each action — never a stricter
+one and never a looser one. So the requirements are not uniform and cannot be made so:
+
+| Section | Creating needs |
+|---|---|
+| tweets | `posts:manage` or `posts:create` |
+| events | `calendar:manage` or `calendar:create` |
+| blogs | `blogs:manage` or `blogs:create` |
+| albums | `albums:manage` or `albums:create` |
+| groups | `groups:manage` or `groups:create` |
+| consultants | `consultants:manage` |
+| projects | `projects:manage`, `projects:create` or `projects:moderate` |
+| awards | `awards:manage` |
+| tasks | `tasks:manage` |
+| **comments, likes** | **nothing — membership is the gate** |
+
+A community admin who grants `blogs:create` in the dashboard expects that grant to mean the same
+thing through an integration. If this SDK demanded `blogs:manage` instead, the grant would silently
+not work through the API and nobody could explain why.
+
+**A plain member holds none of them.** In Gurb, `MEMBER` resolves to an empty permission set and
+publishing is a capability an admin grants. So a key whose owner was never granted anything reads
+everything and publishes nothing — that is correct behaviour, not a misconfiguration, and the first
+403 you meet is probably this.
+
+Comments and likes are the exception because they are what an ordinary member does. Being a member
+is the whole requirement.
+
+### Editing someone else's content
+
+Update and delete check **authorship first**. Your key can always edit what it published, and needs
+that section's `*:manage` or `*:moderate` for anyone else's. Expect 403s when operating on content
+your key did not create — that is the web app's rule, not an SDK restriction.
+
+### Feature gates are not permissions
+
+Most sections sit behind a plan flag. A community whose plan lacks it answers
+`403 FEATURE_NOT_AVAILABLE` on **every** call to that section, reads included. No permission grant
+fixes that; it is an entitlement. `tweets` has no gate at all — that asymmetry is real.
+
+### Uploads are not supported yet
+
+Text and JSON only, everywhere. An album is created **empty**, a tweet carries no attachment, a blog
+has no header image. Uploads need storage-budget accounting this surface does not implement, and
+shipping them without it would let a community silently exceed the storage its plan pays for.
+Members can still add images through the app.
+
+Where an image is unavoidable — a group icon, an award icon — pass a URL or a preset key.
+
+### Two shapes that will otherwise look like bugs
+
+- **Projects write `name` and read `title`.** Reading a project and posting it straight back fails:
+  `title` sets nothing and `name` is missing. Map it yourself.
+- **`POST /tasks` ignores `status`.** Every task starts `PENDING`; the field is not accepted rather
+  than accepted and dropped. The date field is `dueAt`, not `dueDate`.
+
+## Customize the community
+
+```php
+$settings = $gurb->community->getSettings();
+$gurb->community->updateSettings(['directMessagesEnabled' => false]);
+
+$gurb->community->updateBranding(['primaryColor' => '#093431']);
+$gurb->community->updateLegal(terms: '...', privacyPolicy: '...');
+
+$gurb->sidebar->get();
+$gurb->sidebar->update($items);      // PUT — replaces the item list
+$gurb->sidebar->reset();
+
+$gurb->advertisements->active();     // member-facing; NOT paginated
+$gurb->advertisements->list();       // admin view; paginated
+```
+
+**Send only the keys you mean to change.** Never read the settings blob and post it back. The
+server merges deeply for `pageVisibility` **only**; every other key you include replaces its
+counterpart wholesale, and `homeWidgets` has no deep merge at all. A round-trip therefore quietly
+overwrites anything added between your read and your write.
+
+Settings accept a **fixed list of seven keys** and reject anything else rather than ignoring it.
+
 ## Manage members, roles and permissions
 
 ```php
@@ -214,11 +323,51 @@ $minted = $admin->apiKeys->create('cmt_1', 'zapier-prod');   // defaults to [rea
 $admin->apiKeys->revoke($minted->id);
 ```
 
+### Who owns the community you create
+
+By default the community is founded by **whoever the key belongs to** — and a platform key can only
+be minted by a Gurb super admin, so by default that is the platform admin, not you. Communities
+created that way belong to someone else, and nobody notices until they ask why.
+
+Name yourself, by e-mail:
+
+```php
+$community = $admin->communities->create(
+    name: 'نادي القراءة',
+    slug: 'book-club',
+    ownerEmail: 'ahmed@corp.com',       // ← this account founds it
+);
+```
+
+That account becomes the community's sole `COMMUNITY_ADMIN`. If it has no Gurb account yet, one is
+created — pass `ownerFirstName:` and `ownerFamilyName:` if you have them, or the local part of the
+address is used.
+
+An **existing** account is reused and never modified: no password change, no name overwrite, no role
+anywhere except inside the community it is about to found. Naming an address that already belongs to
+somebody hands them a community; it cannot take their account over.
+
+Ask the platform which account your key acts for before you create anything:
+
+```php
+$me = $admin->me();
+
+if ($me->actsForIssuer) {
+    throw new RuntimeException('This key names no subject — pass ownerEmail, or ask for a new key.');
+}
+echo $me->effectiveOwner()->email;
+```
+
+`$owner` (a full `ExternalOwner` with a registered identity provider) does the same job with a
+provider assertion behind it. Send one or the other — both together is refused before any request,
+because they answer the same question two ways and there is no useful behaviour for the
+contradiction.
+
 ### Creating a community takes exactly two fields
 
-`create(name:, slug:)` and nothing else. There is no `$description`, no `$type` and no
-`$ownerUserId`, because the endpoint does not honour them: **visibility is decided server-side
-(PRIVATE) and the owner is taken from the credential that made the call.** Accepting those and
+`create(name:, slug:)` plus the optional owner above, and nothing else. There is no `$description`
+and no `$type`, because the endpoint does not honour them: **visibility is decided server-side
+(PRIVATE).** Accepting those and
 dropping them would be worse than not offering them — a caller who passes `type: 'PUBLIC'`, gets a
 private community and no error has been lied to by an API that looked like it was listening. Adjust
 the rest afterwards through the dashboard or the community settings endpoints.
@@ -279,10 +428,58 @@ security model rather than a naming preference.
 never in a repository, rotated when staff change. If you are unsure whether a script needs it, it
 does not.
 
-## Embed a community section in your site
+## Embed the community in your site
 
 Three steps, and the middle one is the whole security model: **your backend mints the token, your
 browser never sees the key.**
+
+### The whole community, or one section
+
+`EmbedSection::Community` frames **the community page itself** — its navigation and every section
+the plan enables — exactly as a member sees it after signing in. They land where a normal sign-in
+puts them and move around inside the frame. Reach for it when the frame *is* the page.
+
+The other cases (`Tweets`, `Events`, `Blogs`, `Albums`) are chrome-less panes meant to sit inside
+your own layout: your header, your navigation, one Gurb panel among your content. They have no menu
+and cannot navigate anywhere.
+
+The trade is real. A whole community brings its own scroll height, its own internal routing — your
+back button will not follow it — and links that may try to leave the frame. A pane brings none of
+that. Heights default accordingly: 900px for a community, 600px for a pane.
+
+### Three ways to render it
+
+```php
+$snippet = new EmbedSnippet('https://mygurb.com');
+
+// (a) Loader script: auto-resizes once the frame reports its height.
+echo $snippet->render('gurb', 'my-club', EmbedSection::Community, $token);
+
+// (b) Loader script, token fetched from YOUR endpoint after page load.
+//     Use when the page may be cached longer than the token lives (~120s).
+echo $snippet->renderAsync('gurb', 'my-club', EmbedSection::Community, '/api/gurb-token');
+
+// (c) A plain iframe. No script, no CDN, nothing to load.
+echo $snippet->iframe(EmbedSection::Community, $token);
+```
+
+`(c)` is the one to use when a third-party script on your critical path is unwelcome, or your CSP
+forbids one. What you give up is the loader's auto-resize, so pick a height that suits your layout —
+the frame will not grow by itself.
+
+All three put the token in the **URL fragment**, never a query string. A fragment is never
+transmitted to a server, so the token stays out of Gurb's access logs, out of yours if you proxy,
+and out of the `Referer` header of every outbound link the framed page renders. It is a live
+credential; that is the difference between a short-lived secret and a logged one.
+
+### Gurb must allow your origin to frame it
+
+Framing is refused unless the Gurb deployment sends `Content-Security-Policy: frame-ancestors`
+covering your site on the `/embed` path. `X-Frame-Options` cannot express a list of origins,
+`ALLOW-FROM` is dead in current browsers, and sending both headers makes browsers ignore the CSP
+list entirely — so it must be CSP, and `X-Frame-Options` must be absent on that path. If the frame
+stays blank with a console message about `X-Frame-Options`, that is a server configuration on
+Gurb's side, not a bug in your integration.
 
 **1. Your backend mints a token for one of your own logged-in users:**
 
