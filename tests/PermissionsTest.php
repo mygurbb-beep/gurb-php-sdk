@@ -4,252 +4,213 @@ declare(strict_types=1);
 
 namespace Gurb\Tests;
 
-use Gurb\CommunityRole;
-use Gurb\GurbApiException;
-use Gurb\GurbClient;
-use Gurb\GurbErrorCode;
-use Gurb\Permission;
-use Gurb\Tests\Support\StubHttpClient;
+use Gurb\Permissions;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * The permission catalogue — the same assertions as the TypeScript suite.
+ *
+ * Both SDKs ship the SAME generated JSON, so these tests are deliberately a
+ * mirror: if one suite passes and the other fails, the two SDKs have drifted,
+ * which is the failure this whole arrangement exists to prevent.
+ */
 final class PermissionsTest extends TestCase
 {
-    private const KEY = ApiKeyTest::KEY;
-
-    private function client(StubHttpClient $http): GurbClient
+    #[Test]
+    public function it_carries_every_permission_the_platform_defines(): void
     {
-        return new GurbClient(self::KEY, 'https://x.test', $http);
+        self::assertCount(Permissions::total(), Permissions::all());
+        self::assertSame(48, Permissions::total());
+        self::assertCount(26, Permissions::categories());
     }
 
-    // ─── Roles ───────────────────────────────────────────────────────────────
-
+    /**
+     * A blank label renders as an empty cell, which reads as "this permission
+     * does nothing" rather than as a gap. This assertion already caught a real
+     * bug: the generator matched single-quoted strings only, and silently
+     * dropped seven descriptions written with double quotes because they
+     * contain an apostrophe.
+     */
     #[Test]
-    public function setting_a_role_patches_the_role_subresource(): void
+    public function every_row_has_both_languages_with_no_blanks(): void
     {
-        $http = StubHttpClient::json(200, ['data' => ['memberId' => 'mem_1', 'role' => 'MODERATOR']]);
-
-        $member = $this->client($http)->members->setRole('mem_1', CommunityRole::Moderator);
-
-        self::assertSame('PATCH', $http->lastCall()->method);
-        self::assertSame('https://x.test/api/sdk/members/mem_1/role', $http->lastCall()->url);
-        $body = \json_decode((string) $http->lastCall()->body, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['role' => 'MODERATOR'], $body);
-        self::assertSame('MODERATOR', $member->role);
-    }
-
-    #[Test]
-    public function the_role_enum_has_no_platform_role_to_assign(): void
-    {
-        // The security claim, asserted rather than assumed. SUPER_ADMIN is
-        // platform-level and no API call may grant it — leaving it out of the
-        // enum means there is no way to ask for it, so this SDK cannot even
-        // form the request the server would have to refuse.
-        $names = \array_map(static fn (CommunityRole $r): string => $r->value, CommunityRole::cases());
-
-        self::assertSame(['ADMIN', 'MODERATOR', 'MEMBER'], $names);
-        self::assertNull(CommunityRole::tryFrom('SUPER_ADMIN'));
-    }
-
-    #[Test]
-    public function a_role_filter_on_list_travels_as_its_backend_spelling(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => ['items' => []]]);
-
-        $this->client($http)->members->list(role: CommunityRole::Admin);
-
-        self::assertSame('https://x.test/api/sdk/members?role=ADMIN', $http->lastCall()->url);
-    }
-
-    // ─── Reading permissions ─────────────────────────────────────────────────
-
-    #[Test]
-    public function it_reads_role_effective_granted_and_revoked_separately(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => [
-            'memberId' => 'mem_1',
-            'userId' => 'usr_1',
-            'role' => 'MODERATOR',
-            'effective' => ['CREATE_POST', 'CREATE_EVENT', 'MODERATE_CONTENT'],
-            'granted' => ['CREATE_EVENT'],
-            'revoked' => ['DELETE_ANY_POST'],
-        ]]);
-
-        $permissions = $this->client($http)->members->getPermissions('mem_1');
-
-        self::assertSame('https://x.test/api/sdk/members/mem_1/permissions', $http->lastCall()->url);
-        self::assertSame('GET', $http->lastCall()->method);
-        self::assertSame(CommunityRole::Moderator, $permissions->role());
-        // Three lists, not one: "can they?" and "why?" are different questions,
-        // and only the second tells you what to change.
-        self::assertTrue($permissions->can(Permission::MODERATE_CONTENT));
-        self::assertFalse($permissions->can(Permission::DELETE_ANY_POST));
-        self::assertSame(['CREATE_EVENT'], $permissions->granted);
-        self::assertSame(['DELETE_ANY_POST'], $permissions->revoked);
-    }
-
-    #[Test]
-    public function an_unknown_role_from_a_newer_server_decodes_rather_than_throwing(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => ['role' => 'CURATOR', 'effective' => []]]);
-
-        $permissions = $this->client($http)->members->getPermissions('mem_1');
-
-        // Tolerant on the way in, strict on the way out. An additive backend
-        // deploy must not become an outage for every host site — so the raw
-        // string survives and only the enum accessor gives up.
-        self::assertSame('CURATOR', $permissions->role);
-        self::assertNull($permissions->role());
-    }
-
-    // ─── Updating permissions ────────────────────────────────────────────────
-
-    #[Test]
-    public function it_refuses_to_grant_and_revoke_the_same_permission_in_one_call(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => []]);
-
-        try {
-            $this->client($http)->members->updatePermissions(
-                'mem_1',
-                grant: [Permission::CREATE_POST, Permission::CREATE_EVENT],
-                revoke: [Permission::CREATE_POST],
-            );
-            self::fail('Expected a GurbApiException.');
-        } catch (GurbApiException $e) {
-            self::assertStringContainsString('grant and revoke the same permission', $e->getMessage());
-            // Names the offending permission, not just "conflict".
-            self::assertStringContainsString('CREATE_POST', $e->getMessage());
-            self::assertSame(GurbErrorCode::VALIDATION_ERROR, $e->code());
+        $blank = [];
+        foreach (Permissions::all() as $p) {
+            if ($p['name'] === '' || $p['nameArabic'] === ''
+                || $p['description'] === '' || $p['descriptionArabic'] === '') {
+                $blank[] = $p['id'];
+            }
         }
 
-        // The point is that it never reached the network. There is no correct
-        // guess at what was meant, so asking the server is not a fix — it just
-        // moves the guess.
-        self::assertCount(0, $http->calls);
+        self::assertSame([], $blank);
     }
 
     #[Test]
-    public function it_refuses_an_empty_change_set(): void
+    public function it_has_no_duplicate_ids_across_categories(): void
     {
-        $http = StubHttpClient::json(200, ['data' => []]);
+        $ids = \array_column(Permissions::all(), 'id');
+        self::assertSame(\count($ids), \count(\array_unique($ids)));
+    }
 
-        try {
-            $this->client($http)->members->updatePermissions('mem_1');
-            self::fail('Expected a GurbApiException.');
-        } catch (GurbApiException $e) {
-            self::assertStringContainsString('at least one permission', $e->getMessage());
+    #[Test]
+    public function every_id_is_shaped_module_colon_verb(): void
+    {
+        foreach (Permissions::all() as $p) {
+            self::assertMatchesRegularExpression('/^[a-z0-9_]+:[a-z0-9_]+$/', $p['id']);
+        }
+    }
+
+    #[Test]
+    public function labels_answer_arabic_by_default_and_english_on_request(): void
+    {
+        $one = Permissions::find('users:manage');
+        self::assertNotNull($one);
+
+        self::assertSame($one['nameArabic'], Permissions::labels()['users:manage']);
+        self::assertSame($one['name'], Permissions::labels('en')['users:manage']);
+    }
+
+    #[Test]
+    public function labels_cover_every_id(): void
+    {
+        $labels = Permissions::labels();
+        foreach (Permissions::all() as $p) {
+            self::assertArrayHasKey($p['id'], $labels);
+        }
+    }
+
+    // ─── manage subsumes create and moderate ─────────────────────────────────
+
+    /**
+     * THE RULE THAT MAKES RAW COUNTS LIE.
+     *
+     * A COMMUNITY_ADMIN is granted `posts:manage`; a MODERATOR is granted
+     * `posts:create` AND `posts:moderate`. Counted naively the moderator looks
+     * more powerful, and any screen comparing roles by list length tells the
+     * reader the opposite of the truth.
+     */
+    #[Test]
+    public function the_admin_resolves_to_more_capability_than_the_moderator(): void
+    {
+        $admin = Permissions::effectiveFor('COMMUNITY_ADMIN');
+        $mod = Permissions::effectiveFor('MODERATOR');
+
+        // Once `manage` is expanded, the admin is genuinely broader — even
+        // though the STORED lists say the opposite (29 against 33). That raw
+        // comparison is pinned in the TypeScript suite, which reads the stored
+        // arrays directly; here the expansion is what is under test.
+        self::assertGreaterThan(\count($mod), \count($admin));
+    }
+
+    #[Test]
+    public function manage_grants_create_and_moderate(): void
+    {
+        self::assertTrue(Permissions::impliedBy(['posts:manage'], 'posts:create'));
+        self::assertTrue(Permissions::impliedBy(['posts:manage'], 'posts:moderate'));
+    }
+
+    #[Test]
+    public function create_never_implies_manage(): void
+    {
+        self::assertFalse(Permissions::impliedBy(['posts:create'], 'posts:manage'));
+    }
+
+    #[Test]
+    public function implication_never_leaks_across_modules(): void
+    {
+        self::assertFalse(Permissions::impliedBy(['posts:manage'], 'blogs:create'));
+    }
+
+    #[Test]
+    public function the_admin_gains_create_permissions_it_was_never_granted_directly(): void
+    {
+        self::assertContains('posts:create', Permissions::effectiveFor('COMMUNITY_ADMIN'));
+    }
+
+    /** Not a bug and not a gap — every capability is granted individually. */
+    #[Test]
+    public function a_plain_member_holds_nothing_at_all(): void
+    {
+        self::assertSame([], Permissions::effectiveFor('MEMBER'));
+    }
+
+    // ─── what an admin may grant ─────────────────────────────────────────────
+
+    #[Test]
+    public function a_moderator_may_be_granted_a_real_subset(): void
+    {
+        $assignable = Permissions::assignableTo('MODERATOR');
+
+        self::assertNotEmpty($assignable);
+        self::assertLessThan(Permissions::total(), \count($assignable));
+    }
+
+    #[Test]
+    public function an_admin_only_permission_is_offered_to_nobody(): void
+    {
+        $moderator = \array_column(Permissions::assignableTo('MODERATOR'), 'id');
+        $member = \array_column(Permissions::assignableTo('MEMBER'), 'id');
+
+        foreach (Permissions::all() as $p) {
+            if ($p['assignableTo'] === []) {
+                self::assertNotContains($p['id'], $moderator);
+                self::assertNotContains($p['id'], $member);
+            }
+        }
+    }
+
+    // ─── forRole — one call for a whole screen ───────────────────────────────
+
+    #[Test]
+    public function for_role_returns_every_category_in_platform_order_with_labels(): void
+    {
+        $view = Permissions::forRole('MODERATOR');
+        $first = Permissions::categories()[0];
+
+        self::assertCount(26, $view);
+        self::assertSame($first['nameArabic'], $view[0]['label']);
+        self::assertSame($first['name'], Permissions::forRole('MODERATOR', 'en')[0]['label']);
+    }
+
+    #[Test]
+    public function for_role_marks_held_rows_from_the_expanded_set(): void
+    {
+        $flat = [];
+        foreach (Permissions::forRole('COMMUNITY_ADMIN') as $c) {
+            foreach ($c['permissions'] as $p) {
+                $flat[$p['id']] = $p['held'];
+            }
         }
 
-        // An empty change set almost always means the caller built the lists
-        // from a filter that matched nothing. Sending a no-op would hide it.
-        self::assertCount(0, $http->calls);
+        // Never granted directly; held because `posts:manage` implies it.
+        self::assertTrue($flat['posts:create']);
     }
 
     #[Test]
-    public function it_sends_both_lists_in_one_request_so_the_member_is_never_half_updated(): void
+    public function for_role_marks_nothing_held_for_a_plain_member(): void
     {
-        $http = StubHttpClient::json(200, ['data' => ['memberId' => 'mem_1', 'effective' => []]]);
-
-        $this->client($http)->members->updatePermissions(
-            'mem_1',
-            grant: [Permission::CREATE_EVENT],
-            revoke: [Permission::CREATE_POST],
-        );
-
-        // ONE call. Two calls could not be made atomic from out here: between
-        // them the member holds a state nobody asked for, and if the second one
-        // fails they stay in it.
-        self::assertCount(1, $http->calls);
-        self::assertSame('PATCH', $http->lastCall()->method);
-        self::assertSame('https://x.test/api/sdk/members/mem_1/permissions', $http->lastCall()->url);
-        $body = \json_decode((string) $http->lastCall()->body, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['grant' => ['CREATE_EVENT'], 'revoke' => ['CREATE_POST']], $body);
+        foreach (Permissions::forRole('MEMBER') as $c) {
+            foreach ($c['permissions'] as $p) {
+                self::assertFalse($p['held'], $p['id'] . ' should not be held');
+            }
+        }
     }
 
     #[Test]
-    public function an_empty_side_is_sent_as_a_json_array_not_an_object(): void
+    public function for_role_never_loses_a_permission(): void
     {
-        $http = StubHttpClient::json(200, ['data' => []]);
+        $count = 0;
+        foreach (Permissions::forRole('MEMBER') as $c) {
+            $count += \count($c['permissions']);
+        }
 
-        $this->client($http)->members->updatePermissions('mem_1', grant: [Permission::CREATE_POST]);
-
-        // `"revoke":[]` and not `"revoke":{}`. PHP's json_encode turns an empty
-        // array into `[]`, but a *gapped* one into an object — which is why the
-        // resource runs array_values() over both lists first.
-        self::assertStringContainsString('"revoke":[]', (string) $http->lastCall()->body);
+        self::assertSame(Permissions::total(), $count);
     }
 
     #[Test]
-    public function a_list_left_gapped_by_array_filter_still_encodes_as_a_json_array(): void
+    public function it_records_where_the_snapshot_came_from(): void
     {
-        $http = StubHttpClient::json(200, ['data' => []]);
-
-        // The realistic way this breaks: a caller filters their own list and
-        // hands us keys [1, 2]. Without array_values that becomes
-        // {"1":"...","2":"..."} and the server rejects the whole call.
-        $grant = \array_filter(
-            [Permission::CREATE_POST, Permission::CREATE_EVENT, Permission::CREATE_BLOG],
-            static fn (string $p): bool => $p !== Permission::CREATE_POST,
-        );
-
-        $this->client($http)->members->updatePermissions('mem_1', grant: $grant);
-
-        $body = \json_decode((string) $http->lastCall()->body, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['CREATE_EVENT', 'CREATE_BLOG'], $body['grant']);
-    }
-
-    #[Test]
-    public function a_permission_the_sdk_has_never_heard_of_is_sent_anyway(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => []]);
-
-        $this->client($http)->members->updatePermissions('mem_1', grant: ['MANAGE_TIME_MACHINE']);
-
-        // Permissions are strings, not an enum, precisely so that using one the
-        // platform added last week does not require upgrading this package
-        // first. The server owns the real answer and rejects what it dislikes.
-        $body = \json_decode((string) $http->lastCall()->body, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertSame(['MANAGE_TIME_MACHINE'], $body['grant']);
-    }
-
-    #[Test]
-    public function the_known_permission_list_is_reference_material_not_a_gate(): void
-    {
-        self::assertContains(Permission::CREATE_POST, Permission::KNOWN_PERMISSIONS);
-        self::assertNotContains('MANAGE_TIME_MACHINE', Permission::KNOWN_PERMISSIONS);
-        // Constants exist for autocomplete and typo-safety. If this list were
-        // used to validate input, the test above would fail — which is the
-        // whole argument for it not being an enum.
-        self::assertCount(24, Permission::KNOWN_PERMISSIONS);
-    }
-
-    // ─── Removal ─────────────────────────────────────────────────────────────
-
-    #[Test]
-    public function removing_a_member_deletes_the_membership_and_returns_nothing(): void
-    {
-        $http = StubHttpClient::json(200, ['success' => true, 'data' => null]);
-
-        $this->client($http)->members->remove('mem_1');
-
-        self::assertSame('DELETE', $http->lastCall()->method);
-        self::assertSame('https://x.test/api/sdk/members/mem_1', $http->lastCall()->url);
-        // `data: null` unwraps to nothing to map, so the method is typed void
-        // rather than handing back an empty array a caller might read as data.
-        self::assertNull($http->lastCall()->body);
-    }
-
-    #[Test]
-    public function a_member_id_that_could_break_out_of_the_path_is_escaped(): void
-    {
-        $http = StubHttpClient::json(200, ['data' => []]);
-
-        $this->client($http)->members->getPermissions('mem/../../admin');
-
-        self::assertSame(
-            'https://x.test/api/sdk/members/mem%2F..%2F..%2Fadmin/permissions',
-            $http->lastCall()->url,
-        );
+        self::assertStringContainsString('permissions', Permissions::source());
     }
 }
