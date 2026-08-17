@@ -66,29 +66,84 @@ final class EmbedTest extends TestCase
         self::assertArrayNotHasKey('email', $body);
     }
 
+    /**
+     * THESE ASSERTIONS ARE THE CONTRACT with `app/embed/page.tsx` in the Gurb web
+     * app, and with the identical boundary tests in `@gurb/embed` and
+     * `@gurb/server`. Changing one requires changing the others in the same
+     * commit.
+     *
+     * They replaced assertions pinning `/embed/{slug}/{section}#t=`, which were
+     * green and wrong: the page lives at `/embed` and reads `token`, so this
+     * method named a route that does not exist and a fragment key nothing reads.
+     * The tests asserted the string this method produced rather than the shape
+     * the page consumes, which is the only kind of assertion that can be both
+     * passing and useless.
+     */
+    #[Test]
+    public function it_points_at_embed_with_no_slug_and_no_section_segment(): void
+    {
+        $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::json(200, []));
+
+        $url = $client->buildEmbedUrl(null, EmbedSection::Community, 'et_abc');
+
+        self::assertSame('https://x.test/embed', \explode('#', $url)[0]);
+    }
+
+    #[Test]
+    public function it_names_the_token_token_which_is_the_key_the_page_reads(): void
+    {
+        $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::json(200, []));
+
+        \parse_str(
+            (string) \parse_url($client->buildEmbedUrl(null, EmbedSection::Community, 'et_abc'), \PHP_URL_FRAGMENT),
+            $fragment,
+        );
+
+        self::assertSame('et_abc', $fragment['token']);
+        // Absence means "the community home", which is where the page sends an
+        // arriving member anyway.
+        self::assertArrayNotHasKey('section', $fragment);
+    }
+
+    #[Test]
+    public function it_carries_the_section_for_a_single_pane(): void
+    {
+        $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::json(200, []));
+
+        \parse_str(
+            (string) \parse_url($client->buildEmbedUrl(null, EmbedSection::Tweets, 'et_abc'), \PHP_URL_FRAGMENT),
+            $fragment,
+        );
+
+        self::assertSame('tweets', $fragment['section']);
+    }
+
     #[Test]
     public function it_puts_the_token_in_the_fragment_never_the_query_string(): void
     {
         $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::json(200, []));
 
-        $url = $client->buildEmbedUrl('demo', EmbedSection::Tweets, 'et_abc');
+        $url = $client->buildEmbedUrl(null, EmbedSection::Tweets, 'et_abc');
 
-        self::assertSame('https://x.test/embed/demo/tweets#t=et_abc', $url);
-        // Belt and braces: parse it back and prove there is no query component.
-        // A token in `?t=` would be written to nginx logs and Referer headers.
+        // A token in a query string would be written to nginx access logs and
+        // Referer headers. A fragment is never transmitted to a server at all.
         self::assertNull(\parse_url($url, \PHP_URL_QUERY));
-        self::assertSame('t=et_abc', \parse_url($url, \PHP_URL_FRAGMENT));
+        self::assertStringContainsString('token=et_abc', (string) \parse_url($url, \PHP_URL_FRAGMENT));
     }
 
     #[Test]
-    public function it_escapes_a_slug_or_token_that_could_break_out_of_the_url(): void
+    public function it_escapes_a_token_that_could_break_out_of_the_url(): void
     {
         $client = new GurbClient(self::KEY, 'https://x.test', StubHttpClient::json(200, []));
 
-        $url = $client->buildEmbedUrl('a/b?c', EmbedSection::Albums, 'tok en&x=1');
+        $url = $client->buildEmbedUrl(null, EmbedSection::Albums, 'tok en&x=1');
 
-        self::assertSame('https://x.test/embed/a%2Fb%3Fc/albums#t=tok%20en%26x%3D1', $url);
         self::assertNull(\parse_url($url, \PHP_URL_QUERY));
+        \parse_str((string) \parse_url($url, \PHP_URL_FRAGMENT), $fragment);
+        // Round-trips: whatever escaping was applied, the page reads back the
+        // token that was actually minted.
+        self::assertSame('tok en&x=1', $fragment['token']);
+        self::assertSame('albums', $fragment['section']);
     }
 
     #[Test]

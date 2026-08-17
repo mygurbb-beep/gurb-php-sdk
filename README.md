@@ -516,13 +516,17 @@ echo $gurb->embedSnippet()->renderAsync('community', 'my-community', EmbedSectio
 …where `/api/gurb-token` is a route in *your* app that runs step 1 behind your own auth.
 
 Rendering the iframe yourself instead of using the snippet? Use `buildEmbedUrl()` — it puts the
-token in the URL **fragment** (`#t=`), which is never sent to a server and so never lands in nginx
-access logs or `Referer` headers:
+token in the URL **fragment**, which is never sent to a server and so never lands in nginx access
+logs or `Referer` headers:
 
 ```php
-$url = $gurb->buildEmbedUrl('my-community', EmbedSection::Tweets, $session->token);
-// https://mygurb.com/embed/my-community/tweets#t=...
+$url = $gurb->buildEmbedUrl(null, EmbedSection::Tweets, $session->token);
+// https://mygurb.com/embed#token=...&section=tweets
 ```
+
+One path, and everything else in the fragment. The slug argument is ignored and kept only so
+existing call sites still work: the token's server-side envelope already carries the community, so
+a slug in the path could only agree or contradict it.
 
 **3. There is no step three.** Permissions, feature gates and moderation all apply inside the frame
 exactly as they do on mygurb.com, because the embedded user is an ordinary member.
@@ -537,8 +541,12 @@ exactly as they do on mygurb.com, because the embedded user is an ordinary membe
 - **Send an API key to the browser.** `EmbedSnippet` throws if the "token" you hand it starts with
   `gurb_`, because in PHP the same process holds the key *and* writes the HTML.
 - **Read another community.** No method on `GurbClient` takes a `communityId`. The key is the scope.
-- **Post content.** Tweets, events, blogs and albums are read-only through this SDK. Membership is
-  writable (that is what most integrations are for); content is not.
+- **Upload a file.** Every write on this surface is text and JSON. An album is created empty, a
+  tweet carries no attachment, a group's icon is a URL string rather than a file, and there is no
+  `create()` for an advertisement at all — an ad *is* its image.
+- **Grant an award or assign a task.** Both fan out to named people — one call can address every
+  member of the community and notify each of them — so they need their own endpoints and their own
+  documentation, not a field on a CRUD method.
 - **Escalate anyone off this community.** `setRole()` takes a `CommunityRole`, and that enum has no
   platform role in it. The server additionally caps every change at your key's own authority — a key
   minted by a MODERATOR cannot produce an ADMIN — and evaluates it against the live membership of

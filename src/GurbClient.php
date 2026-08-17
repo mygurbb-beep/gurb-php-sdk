@@ -189,21 +189,41 @@ final class GurbClient
     /**
      * Build the iframe URL for a minted token.
      *
-     * The token goes in the FRAGMENT (`#t=`), never the query string. Fragments
-     * are not sent to the server, so the token never reaches nginx access logs,
-     * `Referer` headers on outbound links, or whatever analytics the host page
-     * runs. In a query string it would be written to disk in three places before
-     * the page finished loading.
+     * ONE PATH, AND EVERYTHING ELSE IN THE FRAGMENT. This used to be
+     * `/embed/{slug}/{section}#t=…`, and it did not work: the page that answers
+     * the handshake lives at `/embed` and reads a fragment key named `token`, so
+     * the URL named a route that does not exist AND a key nothing reads. It had
+     * passing tests the whole time, because they asserted the string this method
+     * produced rather than the shape the page consumes.
+     *
+     * `EmbedSnippet::iframe()` on this same object already emitted the correct
+     * shape, which made the two disagree with each other.
+     *
+     * THE SLUG IS UNUSED and the parameter is kept only so existing call sites
+     * still work. The token's server-side envelope already carries the
+     * communityId — it was pinned when the host minted the session — so the
+     * community is decided by the credential, not a path segment. A slug
+     * alongside it could only agree or contradict, and there is no useful
+     * behaviour for the contradiction.
+     *
+     * Fragment, not query string: fragments are never transmitted to a server,
+     * so the token never reaches nginx access logs, `Referer` headers on
+     * outbound links, or whatever analytics the host page runs. In a query
+     * string it would be written to disk in three places before the page
+     * finished loading.
+     *
+     * @param string|null $slug Ignored. Pass null in new code.
      */
-    public function buildEmbedUrl(string $slug, EmbedSection $section, string $token): string
+    public function buildEmbedUrl(?string $slug, EmbedSection $section, string $token): string
     {
-        return \sprintf(
-            '%s/embed/%s/%s#t=%s',
-            $this->requester->baseUrl(),
-            \rawurlencode($slug),
-            $section->value,
-            \rawurlencode($token),
-        );
+        $fragment = ['token' => $token];
+        // Omitted for the whole community: absence means "the community home",
+        // which is where the embed page sends an arriving member anyway.
+        if (!$section->isWholeCommunity()) {
+            $fragment['section'] = $section->value;
+        }
+
+        return $this->requester->baseUrl() . '/embed#' . \http_build_query($fragment);
     }
 
     /**
