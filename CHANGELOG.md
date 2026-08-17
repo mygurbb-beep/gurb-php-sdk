@@ -25,6 +25,46 @@ code points rather than UTF-16 units.
 > The tags want re-cutting as `0.1.0`, `0.2.0` and `0.3.0` against the commits they actually
 > describe, before anything is published.
 
+## 1.6.0
+
+Matches `@gurb/server` 1.6.0 on the wire — the first release of the TypeScript SDK
+published to npm, and the release that brings the two back into version-for-version step.
+
+### Fixed
+
+- **`buildEmbedUrl()` pointed at a route that does not exist.** It built
+  `/embed/{slug}/{section}#t=…`; the page that answers the handshake lives at `/embed` and
+  reads a fragment key named `token`. So the URL named a missing route *and* a key nothing
+  reads, and a frame built from it stayed blank with nothing in it to explain why.
+
+  `EmbedSnippet::iframe()` on the same object already emitted the correct shape, so the two
+  methods disagreed with each other. The tests did not catch it because they asserted the
+  string the method produced rather than the shape the page consumes — the only kind of
+  assertion that can be both passing and useless.
+
+  ```php
+  $gurb->buildEmbedUrl(null, EmbedSection::Tweets, $token);
+  // https://mygurb.com/embed#token=…&section=tweets
+  ```
+
+  **`$slug` is now nullable and ignored**, kept only so existing call sites keep compiling.
+  The token's server-side envelope already carries the communityId, so a slug in the path
+  could only agree with it or contradict it, and there is no useful behaviour for the
+  contradiction. `section` is omitted entirely for `EmbedSection::Community`, because
+  absence means the community home — which is where an arriving member lands anyway.
+
+  The new tests assert the *shape* — path, fragment key, section presence — and are the
+  contract with `app/embed/page.tsx` in the Gurb web app and with the identical boundary
+  tests in `@gurb/embed` and `@gurb/server`. Changing one requires changing the others in
+  the same commit.
+
+### Documentation
+
+- The README claimed **"Tweets, events, blogs and albums are read-only through this SDK"**
+  under "What you cannot do, on purpose". That stopped being true in 1.5.0 and is replaced
+  by what is genuinely still out: file uploads, and granting an award or assigning a task.
+- The `buildEmbedUrl()` example printed the broken URL above.
+
 ## 1.5.0
 
 Every section Gurb has, plus the two things that decide who owns what you create.
