@@ -552,6 +552,63 @@ exactly as they do on mygurb.com, because the embedded user is an ordinary membe
   minted by a MODERATOR cannot produce an ADMIN — and evaluates it against the live membership of
   whoever minted the key, so a key stops working the moment its owner is demoted.
 
+## Partner events (Partner Sign-In)
+
+For a **host** site whose members sign in to a Gurb community through it (RIYADAH is the first):
+tell Gurb, by signed events, who may still be inside and what their name, email and photo are.
+This uses the community's **events secret** (`whsec_…`, handed over by a Gurb super admin) — a
+different credential from the API key, and the class refuses an API key.
+
+```php
+use Gurb\{GurbPartnerEvents, PartnerEvent, PartnerSendResult};
+
+$events = new GurbPartnerEvents(
+    getenv('GURB_COMMUNITY_ID'),
+    getenv('GURB_EVENTS_SECRET'),          // during a rotation: [$newest, $previous]
+    'https://community.example.com',       // default https://mygurb.com
+);
+
+// 1. Build — pure, plain data. Save it in YOUR outbox, in the same DB transaction as the change.
+$event = $events->accessChanged($member->externalId, $member->version, 'blocked');
+$outbox->insert($event->id, json_encode($event->toArray()));
+
+// 2. Send — from your outbox worker. Never throws for HTTP or network failures.
+$result = $events->send(PartnerEvent::fromArray(json_decode($row->payload, true)));
+match ($result->outcome) {
+    PartnerSendResult::DELIVERED => $outbox->markDelivered($row),   // 2xx: applied, duplicate, stale or unknown member
+    PartnerSendResult::RETRY => $outbox->scheduleRetry($row),       // 408/429/5xx/network: back off
+    PartnerSendResult::REJECTED => $alerts->raise($row, $result->code), // 400/401/403/404: retrying cannot help
+};
+```
+
+| Builder | When |
+|---|---|
+| `accessChanged($sub, $stateVersion, $access)` | every change to a member's access (`'allowed'` / `'blocked'`) |
+| `sessionRevoked($sub, $stateVersion)` | a password reset or email change ended their login on your side |
+| `memberUpdated($sub, $stateVersion, name:, email:, avatarUrl:, locale:)` | a shared identity field changed — **a full replacement**: an omitted email moves the member to a placeholder, an omitted photo removes it |
+| `memberDeleted($sub, $stateVersion, requestedAt:)` | an approved erasure request — irreversible |
+| `snapshot($members, snapshotId:, generatedAt:, pageSize:)` | nightly: the FULL list, returned as pages of ≤ 500; send every page |
+| `ping($message)` | "Test connection" |
+
+What Gurb does with them:
+
+- **Newest `stateVersion` wins** per member, so delivery may be duplicated and out of order. Give each
+  member a monotonic version (a change timestamp in ms works; it must stay ≤ 2^53 − 1).
+- **`send()` never retries on its own.** Retries belong to your outbox (back-off for up to 72 h); every
+  send re-signs with a fresh timestamp while the id and body stay identical, so Gurb applies a retried
+  event exactly once.
+- **The snapshot blocks the absent.** Once every page of one snapshot has arrived, members Gurb knows
+  who are missing from it are blocked — so list every member account. If that would block more than
+  10% of them, Gurb blocks nobody and waits for a super admin; a change of more than 1% raises an alert
+  on Gurb's side either way.
+- **Builders refuse what Gurb would refuse** before anything is sent, with the usual local-guard shape
+  (`GurbApiException`, `VALIDATION_ERROR`, `status() === 0`): an empty or over-long `$sub`, a negative
+  version, control characters or invalid UTF-8, a placeholder email, a photo that is not `https://` on
+  port 443, a member listed twice in a snapshot.
+
+A member that a host blocked is refused by `$gurb->embed->createSession()` with `HOST_MEMBER_BLOCKED` —
+show them "membership inactive", not an error.
+
 ## Errors
 
 Everything throws `GurbApiException` with a stable `code()`:
@@ -589,6 +646,17 @@ to handle two kinds of failure for what is one mistake.
 Messages are English by design — your app owns translation. Unrecognised backend error strings never
 leak into `code()`, so a `match` on it will not break the day the backend adds one; the original
 text stays in `getMessage()`.
+
+Partner Sign-In communities add these, mostly from `embed->createSession()` and member imports:
+
+| `code()` | Meaning |
+|---|---|
+| `JOIN_THROUGH_HOST_ONLY` | the community admits members only through its host site, and this key is not the host's |
+| `HOST_MEMBER_BLOCKED` | the host blocked this member — show "membership inactive" |
+| `MEMBER_NOT_ACTIVE` | the member was removed or banned in this community |
+| `ACCOUNT_NOT_USABLE` | the Gurb account behind the member is deactivated or expired |
+| `EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED` | a concurrent request claimed the same identity — retry once |
+| `EXTERNAL_IDENTITY_INVALID_INPUT` | the `externalUserId` or `email` cannot be acted on |
 
 ## Bring your own HTTP client
 

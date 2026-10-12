@@ -107,7 +107,12 @@ class GurbApiException extends RuntimeException
     {
         $parsed = \is_array($body) ? $body : [];
 
-        $declared = \is_string($parsed['error'] ?? null) ? $parsed['error'] : null;
+        // `error` first, then `code`: Gurb's service errors carry the stable code
+        // in `code` only (e.g. JOIN_THROUGH_HOST_ONLY thrown from a service).
+        // Either way only a code we KNOW is promoted to the code.
+        $fromError = \is_string($parsed['error'] ?? null) && \in_array($parsed['error'], GurbErrorCode::DECLARABLE_BY_BACKEND, true) ? $parsed['error'] : null;
+        $fromCode = \is_string($parsed['code'] ?? null) && \in_array($parsed['code'], GurbErrorCode::DECLARABLE_BY_BACKEND, true) ? $parsed['code'] : null;
+        $declared = $fromError ?? $fromCode ?? (\is_string($parsed['error'] ?? null) ? $parsed['error'] : null);
         $message = \is_string($parsed['message'] ?? null) ? $parsed['message'] : null;
         $requestId = \is_string($parsed['requestId'] ?? null) ? $parsed['requestId'] : null;
 

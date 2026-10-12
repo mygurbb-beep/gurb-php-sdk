@@ -25,6 +25,37 @@ code points rather than UTF-16 units.
 > The tags want re-cutting as `0.1.0`, `0.2.0` and `0.3.0` against the commits they actually
 > describe, before anything is published.
 
+## 1.8.0
+
+Matches `@gurb/server` 1.8.0 on the wire. (`@gurb/embed` 1.8.0 was a browser-only release with nothing
+for PHP to match.)
+
+### Added — partner events (Gurb Partner Sign-In, events contract v1)
+
+`GurbPartnerEvents` builds and sends the signed events a **host** site uses to keep a Gurb community in
+step with its own members: `accessChanged`, `sessionRevoked`, `memberUpdated`, `memberDeleted`,
+`snapshot` (pages of ≤ 500 under one `snapshot_id`) and `ping`. A built `PartnerEvent` is plain data
+(`toArray()` / `fromArray()`) for the host's outbox; `send()` re-signs with a fresh timestamp and
+returns a `PartnerSendResult` (`delivered` / `rejected` / `retry`) without ever retrying itself.
+
+- Keyed by the community's **events secret** (`whsec_…`); an API key is refused at construction.
+  Two secrets during a rotation.
+- Standard Webhooks signing with `hash_hmac` — no new dependency; pinned by the same test vector as
+  the TypeScript SDK, produced with the `standardwebhooks` library Gurb's receiver verifies with.
+- Builders apply the receiver's limits and refuse locally like every other guard:
+  `GurbApiException`, `VALIDATION_ERROR`, status 0. Invalid UTF-8 is refused (PHP's form of the
+  broken Unicode the TypeScript SDK checks for). Lengths count characters without needing ext-mbstring.
+
+### Added — Partner Sign-In error codes
+
+`GurbErrorCode::JOIN_THROUGH_HOST_ONLY`, `HOST_MEMBER_BLOCKED`, `MEMBER_NOT_ACTIVE`,
+`ACCOUNT_NOT_USABLE`, `EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED`, `EXTERNAL_IDENTITY_INVALID_INPUT`.
+
+### Fixed — a refusal whose code is only in `code` mapped to a generic one
+
+`GurbApiException::fromResponse()` now reads `error`, then `code` — still only ever a code this SDK
+knows.
+
 ## 1.6.0
 
 Matches `@gurb/server` 1.6.0 on the wire — the first release of the TypeScript SDK

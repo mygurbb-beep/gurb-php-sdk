@@ -24,6 +24,21 @@ final class GurbErrorCode
     public const NOT_FOUND = 'NOT_FOUND';
     public const RATE_LIMITED = 'RATE_LIMITED';
     public const VALIDATION_ERROR = 'VALIDATION_ERROR';
+
+    // Partner Sign-In (1.8.0) — refusals in a community that admits members only through its host site.
+    /** The community admits members only through its host site, and this key is not the host's. */
+    public const JOIN_THROUGH_HOST_ONLY = 'JOIN_THROUGH_HOST_ONLY';
+    /** The host blocked this member (an access event or the nightly snapshot): show "membership inactive". */
+    public const HOST_MEMBER_BLOCKED = 'HOST_MEMBER_BLOCKED';
+    /** The member was removed or banned in this community. */
+    public const MEMBER_NOT_ACTIVE = 'MEMBER_NOT_ACTIVE';
+    /** The Gurb account behind this member is deactivated or expired. */
+    public const ACCOUNT_NOT_USABLE = 'ACCOUNT_NOT_USABLE';
+    /** A competing request claimed the same identity at the same moment — retry once. */
+    public const EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED = 'EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED';
+    /** The identity in the request cannot be acted on (bad externalUserId / email). */
+    public const EXTERNAL_IDENTITY_INVALID_INPUT = 'EXTERNAL_IDENTITY_INVALID_INPUT';
+
     public const NETWORK_ERROR = 'NETWORK_ERROR';
     public const UNKNOWN = 'UNKNOWN';
 
@@ -44,6 +59,12 @@ final class GurbErrorCode
         self::NOT_FOUND,
         self::RATE_LIMITED,
         self::VALIDATION_ERROR,
+        self::JOIN_THROUGH_HOST_ONLY,
+        self::HOST_MEMBER_BLOCKED,
+        self::MEMBER_NOT_ACTIVE,
+        self::ACCOUNT_NOT_USABLE,
+        self::EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED,
+        self::EXTERNAL_IDENTITY_INVALID_INPUT,
     ];
 
     private function __construct()
