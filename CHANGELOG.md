@@ -25,6 +25,25 @@ code points rather than UTF-16 units.
 > The tags want re-cutting as `0.1.0`, `0.2.0` and `0.3.0` against the commits they actually
 > describe, before anything is published.
 
+## 1.9.0
+
+Matches `@gurb/server` 1.9.0 on the wire (same paths, bodies, local guards and error codes).
+
+### Added — event reminders and content invitations
+
+- `$gurb->events->sendReminder($eventId, ['email', 'push', 'inApp'])` → `POST /api/sdk/events/{id}/reminders` —
+  «إرسال تذكير»: remind the event's attendees now. The key's owner needs `calendar:manage` or
+  `calendar:moderate`; one manual reminder per event per 10 minutes. Returns `EventReminderResult`.
+- `$gurb->contentInvitations->create($type, $id, $inviteeIds, $message)` → `POST /api/sdk/content-invitations`
+  and `->listMine($type, $id)` → `GET /api/sdk/content-invitations/mine` — «دعوة للمشاهدة» for a blog
+  post, an album or an event. Returns `ContentInvitationsResult` (`invited`, `skipped` with SELF /
+  ALREADY_INVITED / UNAVAILABLE).
+- Local guards (no request sent): an empty or unknown channel; a section other than blog / album / event.
+- `GurbErrorCode`: `EVENT_REMINDER_COOLDOWN`, `EVENT_NOT_REMINDABLE`, `EVENT_ALREADY_STARTED`,
+  `EVENT_REMINDER_NO_RECIPIENTS`, `INVITES_DAILY_LIMIT`, `RESTRICTION_BLOCKED` — none retryable.
+
+Requires a Gurb backend with feat/remind-invite deployed (the `/api/sdk` routes above).
+
 ## 1.8.0
 
 Matches `@gurb/server` 1.8.0 on the wire. (`@gurb/embed` 1.8.0 was a browser-only release with nothing

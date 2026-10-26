@@ -7,6 +7,7 @@ namespace Gurb\Resource;
 use Gurb\GurbApiException;
 use Gurb\Internal\Requester;
 use Gurb\Model\Event;
+use Gurb\Model\EventReminderResult;
 use Gurb\Model\Paginated;
 
 final class EventsResource
@@ -110,5 +111,35 @@ final class EventsResource
     public function delete(string $eventId): void
     {
         $this->requester->request('DELETE', 'sdk/events/' . \rawurlencode($eventId));
+    }
+
+    /**
+     * «إرسال تذكير» — remind the event's attendees now, through the channels you pick.
+     *
+     * The key's owner needs `calendar:manage` OR `calendar:moderate` — the permission Gurb's web
+     * app checks for the same button. One manual reminder per event per 10 minutes
+     * (429 EVENT_REMINDER_COOLDOWN, not retryable); a draft, cancelled, finished or started event
+     * is refused (409). E-mails are queued: `emailQueued` is not a delivery count.
+     *
+     * @param list<'email'|'push'|'inApp'> $channels One, several or all three.
+     *
+     * @throws GurbApiException
+     */
+    public function sendReminder(string $eventId, array $channels): EventReminderResult
+    {
+        if ($channels === []) {
+            throw GurbApiException::localValidation('A reminder needs at least one channel: "email", "push" or "inApp".');
+        }
+        foreach ($channels as $c) {
+            if (!\in_array($c, ['email', 'push', 'inApp'], true)) {
+                throw GurbApiException::localValidation('Unknown reminder channel — use "email", "push" or "inApp".');
+            }
+        }
+
+        return EventReminderResult::fromArray($this->requester->request(
+            'POST',
+            'sdk/events/' . \rawurlencode($eventId) . '/reminders',
+            body: ['channels' => \array_values($channels)],
+        ));
     }
 }

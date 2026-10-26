@@ -156,6 +156,26 @@ Where an image is unavoidable — a group icon, an award icon — pass a URL or 
 - **`POST /tasks` ignores `status`.** Every task starts `PENDING`; the field is not accepted rather
   than accepted and dropped. The date field is `dueAt`, not `dueDate`.
 
+## Remind attendees and invite members (1.9.0)
+
+```php
+// «إرسال تذكير» — the key's owner needs calendar:manage or calendar:moderate
+$r = $gurb->events->sendReminder('ev_1', ['push', 'inApp']);   // or 'email', or all three
+$r->recipients;   // attendees addressed (never the key's owner)
+$r->emailQueued;  // queued, not yet delivered
+
+// «دعوة للمشاهدة» — any member who can open the item
+$res = $gurb->contentInvitations->create('album', 'al_1', ['u_2', 'u_3'], 'شوفوا الصور');
+$res->invited;   // ['u_2']
+$res->skipped;   // [['userId' => 'u_3', 'reason' => 'UNAVAILABLE']]
+$gurb->contentInvitations->listMine('album', 'al_1');
+```
+
+- One manual reminder per event per 10 minutes → `EVENT_REMINDER_COOLDOWN` (429, **not** retryable).
+- A person is invited to an item **once**, by anyone. `UNAVAILABLE` deliberately covers «not a member»,
+  «hidden from your member directory» and «cannot open the item». 20 invitees per call; 100 per day →
+  `INVITES_DAILY_LIMIT`.
+
 ## Customize the community
 
 ```php

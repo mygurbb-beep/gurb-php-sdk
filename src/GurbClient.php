@@ -18,6 +18,7 @@ use Gurb\Resource\CommentsResource;
 use Gurb\Resource\CommunityRequestsResource;
 use Gurb\Resource\CommunityResource;
 use Gurb\Resource\ConsultantsResource;
+use Gurb\Resource\ContentInvitationsResource;
 use Gurb\Resource\EventsResource;
 use Gurb\Resource\GroupsResource;
 use Gurb\Resource\LikesResource;
@@ -49,6 +50,8 @@ final class GurbClient
     public readonly CommunityRequestsResource $communityRequests;
     public readonly TweetsResource $tweets;
     public readonly EventsResource $events;
+    /** «دعوة للمشاهدة» — invite members to view a blog post, an album or an event. */
+    public readonly ContentInvitationsResource $contentInvitations;
     public readonly BlogsResource $blogs;
     public readonly AlbumsResource $albums;
     public readonly GroupsResource $groups;
@@ -109,6 +112,7 @@ final class GurbClient
         $this->communityRequests = new CommunityRequestsResource($this->requester);
         $this->tweets = new TweetsResource($this->requester);
         $this->events = new EventsResource($this->requester);
+        $this->contentInvitations = new ContentInvitationsResource($this->requester);
         $this->blogs = new BlogsResource($this->requester);
         $this->albums = new AlbumsResource($this->requester);
         $this->groups = new GroupsResource($this->requester);

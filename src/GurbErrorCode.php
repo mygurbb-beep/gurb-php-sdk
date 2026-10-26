@@ -39,6 +39,20 @@ final class GurbErrorCode
     /** The identity in the request cannot be acted on (bad externalUserId / email). */
     public const EXTERNAL_IDENTITY_INVALID_INPUT = 'EXTERNAL_IDENTITY_INVALID_INPUT';
 
+    // Event reminders + content invitations (1.9.0). None of these is helped by retrying now.
+    /** A manual reminder for this event went out less than 10 minutes ago. */
+    public const EVENT_REMINDER_COOLDOWN = 'EVENT_REMINDER_COOLDOWN';
+    /** The event is a draft, cancelled or completed. */
+    public const EVENT_NOT_REMINDABLE = 'EVENT_NOT_REMINDABLE';
+    /** The event has already started. */
+    public const EVENT_ALREADY_STARTED = 'EVENT_ALREADY_STARTED';
+    /** Nobody is attending the event yet. */
+    public const EVENT_REMINDER_NO_RECIPIENTS = 'EVENT_REMINDER_NO_RECIPIENTS';
+    /** The key's owner sent 100 invitations in the last 24 hours. */
+    public const INVITES_DAILY_LIMIT = 'INVITES_DAILY_LIMIT';
+    /** The key's owner is restricted (suspended, or blocked from posting) in this community. */
+    public const RESTRICTION_BLOCKED = 'RESTRICTION_BLOCKED';
+
     public const NETWORK_ERROR = 'NETWORK_ERROR';
     public const UNKNOWN = 'UNKNOWN';
 
@@ -65,6 +79,12 @@ final class GurbErrorCode
         self::ACCOUNT_NOT_USABLE,
         self::EXTERNAL_IDENTITY_MANUAL_LINK_REQUIRED,
         self::EXTERNAL_IDENTITY_INVALID_INPUT,
+        self::EVENT_REMINDER_COOLDOWN,
+        self::EVENT_NOT_REMINDABLE,
+        self::EVENT_ALREADY_STARTED,
+        self::EVENT_REMINDER_NO_RECIPIENTS,
+        self::INVITES_DAILY_LIMIT,
+        self::RESTRICTION_BLOCKED,
     ];
 
     private function __construct()
