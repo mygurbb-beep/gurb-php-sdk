@@ -14,8 +14,10 @@ use Gurb\Internal\Decode;
 final class EventReminderResult
 {
     private function __construct(
-        /** Attendees addressed: PAID ticket holders of a paid event, or members «going» to a free one — never the key's owner. */
+        /** People addressed in the chosen audience — never the key's owner. */
         public readonly int $recipients,
+        /** 'going' | 'interested' | 'all' | 'members' — 'going' when the request omitted it. */
+        public readonly string $audience,
         /** @var list<string> 'email' | 'push' | 'inApp', in that fixed order. */
         public readonly array $channels,
         /** Bell notifications stored (0 without 'inApp'). */
@@ -32,6 +34,7 @@ final class EventReminderResult
     {
         return new self(
             recipients: Decode::int($data, 'recipients'),
+            audience: Decode::str($data, 'audience', 'going'),
             channels: Decode::strList($data, 'channels'),
             inApp: Decode::int($data, 'inApp'),
             push: Decode::int($data, 'push'),

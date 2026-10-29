@@ -161,11 +161,16 @@ Where an image is unavoidable — a group icon, an award icon — pass a URL or 
 ```php
 // «إرسال تذكير» — the key's owner needs calendar:manage or calendar:moderate
 $r = $gurb->events->sendReminder('ev_1', ['push', 'inApp']);   // or 'email', or all three
-$r->recipients;   // attendees addressed (never the key's owner)
+$r->recipients;   // people addressed (never the key's owner)
 $r->emailQueued;  // queued, not yet delivered
 
-// «دعوة للمشاهدة» — any member who can open the item
-$res = $gurb->contentInvitations->create('album', 'al_1', ['u_2', 'u_3'], 'شوفوا الصور');
+// WHO: 'going' (default) | 'interested' | 'all' | 'members' (+ user ids), with an optional message
+$gurb->events->sendReminder('ev_1', ['inApp'], 'all', [], 'لا تنسون الكتاب');
+$gurb->events->sendReminder('ev_1', ['push'], 'members', ['u_2']);
+
+// «دعوة للمشاهدة» — blog, album, event, tweet, project, project2, consultant
+$res = $gurb->contentInvitations->create('album', 'al_1', ['u_2', 'u_3'], 'شوفوا الصور', ['email', 'push', 'inApp']);
+// channels omitted (null) → push + bell
 $res->invited;   // ['u_2']
 $res->skipped;   // [['userId' => 'u_3', 'reason' => 'UNAVAILABLE']]
 $gurb->contentInvitations->listMine('album', 'al_1');

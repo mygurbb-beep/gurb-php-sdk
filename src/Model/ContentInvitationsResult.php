@@ -20,6 +20,10 @@ final class ContentInvitationsResult
         public readonly array $invited,
         /** @var list<array{userId: string, reason: string}> */
         public readonly array $skipped,
+        /** @var list<string> The channels used: 'email' | 'push' | 'inApp'. */
+        public readonly array $channels,
+        /** E-mails QUEUED (0 without 'email'). Not a delivery count. */
+        public readonly int $emailQueued,
     ) {
     }
 
@@ -31,6 +35,11 @@ final class ContentInvitationsResult
             $skipped[] = ['userId' => Decode::str($row, 'userId'), 'reason' => Decode::str($row, 'reason')];
         }
 
-        return new self(invited: Decode::strList($data, 'invited'), skipped: $skipped);
+        return new self(
+            invited: Decode::strList($data, 'invited'),
+            skipped: $skipped,
+            channels: Decode::strList($data, 'channels'),
+            emailQueued: Decode::int($data, 'emailQueued'),
+        );
     }
 }

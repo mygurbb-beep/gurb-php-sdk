@@ -114,18 +114,26 @@ final class EventsResource
     }
 
     /**
-     * «إرسال تذكير» — remind the event's attendees now, through the channels you pick.
+     * «إرسال تذكير» — remind people about the event now: the audience you pick, through the
+     * channels you pick, with an optional message.
+     *
+     * $audience: 'going' (default — PAID ticket holders of a paid event, members «going» to a free
+     * one), 'interested' (pressed «interested», not confirmed), 'all' (every approved member) or
+     * 'members' (the 1–200 $userIds you pick; non-members among them are dropped).
      *
      * The key's owner needs `calendar:manage` OR `calendar:moderate` — the permission Gurb's web
      * app checks for the same button. One manual reminder per event per 10 minutes
      * (429 EVENT_REMINDER_COOLDOWN, not retryable); a draft, cancelled, finished or started event
      * is refused (409). E-mails are queued: `emailQueued` is not a delivery count.
      *
-     * @param list<'email'|'push'|'inApp'> $channels One, several or all three.
+     * @param list<'email'|'push'|'inApp'>                $channels One, several or all three.
+     * @param 'going'|'interested'|'all'|'members'        $audience
+     * @param list<string>                                $userIds  Only with 'members'.
+     * @param string|null                                 $message  Up to 300 characters.
      *
      * @throws GurbApiException
      */
-    public function sendReminder(string $eventId, array $channels): EventReminderResult
+    public function sendReminder(string $eventId, array $channels, string $audience = 'going', array $userIds = [], ?string $message = null): EventReminderResult
     {
         if ($channels === []) {
             throw GurbApiException::localValidation('A reminder needs at least one channel: "email", "push" or "inApp".');
@@ -136,10 +144,27 @@ final class EventsResource
             }
         }
 
+        if (!\in_array($audience, ['going', 'interested', 'all', 'members'], true)) {
+            throw GurbApiException::localValidation('Unknown reminder audience — use "going", "interested", "all" or "members".');
+        }
+        $body = ['channels' => \array_values($channels)];
+        if ($audience !== 'going') {
+            $body['audience'] = $audience;
+        }
+        if ($audience === 'members') {
+            if ($userIds === []) {
+                throw GurbApiException::localValidation('audience "members" needs at least one user id.');
+            }
+            $body['userIds'] = \array_values($userIds);
+        }
+        if ($message !== null) {
+            $body['message'] = $message;
+        }
+
         return EventReminderResult::fromArray($this->requester->request(
             'POST',
             'sdk/events/' . \rawurlencode($eventId) . '/reminders',
-            body: ['channels' => \array_values($channels)],
+            body: $body,
         ));
     }
 }

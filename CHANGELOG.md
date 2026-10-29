@@ -36,13 +36,30 @@ Matches `@gurb/server` 1.9.0 on the wire (same paths, bodies, local guards and e
   `calendar:moderate`; one manual reminder per event per 10 minutes. Returns `EventReminderResult`.
 - `$gurb->contentInvitations->create($type, $id, $inviteeIds, $message)` → `POST /api/sdk/content-invitations`
   and `->listMine($type, $id)` → `GET /api/sdk/content-invitations/mine` — «دعوة للمشاهدة» for a blog
-  post, an album or an event. Returns `ContentInvitationsResult` (`invited`, `skipped` with SELF /
+  post, an album or an event. Needs the item section's manage or moderate permission
+  (`INSUFFICIENT_PERMISSION` otherwise). Returns `ContentInvitationsResult` (`invited`, `skipped` with SELF /
   ALREADY_INVITED / UNAVAILABLE).
 - Local guards (no request sent): an empty or unknown channel; a section other than blog / album / event.
 - `GurbErrorCode`: `EVENT_REMINDER_COOLDOWN`, `EVENT_NOT_REMINDABLE`, `EVENT_ALREADY_STARTED`,
   `EVENT_REMINDER_NO_RECIPIENTS`, `INVITES_DAILY_LIMIT`, `RESTRICTION_BLOCKED` — none retryable.
 
-Requires a Gurb backend with feat/remind-invite deployed (the `/api/sdk` routes above).
+### Added — reminder audience, invitation channels, four more sections (feat/invite-reminder-audience)
+
+Folded into 1.9.0 because 1.9.0 was never published. Every new argument is optional and last, so a
+call written against the first draft behaves the same.
+
+- `sendReminder($eventId, $channels, $audience = 'going', $userIds = [], $message = null)` — 'going'
+  (the confirmed), 'interested', 'all' (every approved member) or 'members' (1–200 `$userIds`;
+  non-members dropped). `EventReminderResult` gains `audience`.
+- `contentInvitations->create(..., $message, $channels = null)` — null → the server's default, push +
+  bell. Sections gain 'tweet', 'project', 'project2', 'consultant'. `ContentInvitationsResult` gains
+  `channels` and `emailQueued`.
+- Local guards: an unknown audience; 'members' without user ids; an empty or unknown invitation channel.
+- `GurbErrorCode`: `INVITE_CHANNEL_INVALID`, `REMINDER_AUDIENCE_INVALID`, `REMINDER_MEMBERS_REQUIRED`,
+  `REMINDER_MEMBERS_TOO_MANY`, `REMINDER_MESSAGE_TOO_LONG`.
+
+Requires a Gurb backend with feat/remind-invite AND feat/invite-reminder-audience deployed (the second
+includes `migrate-widen-content-invitation-types` — without it the four new sections answer 500).
 
 ## 1.8.0
 

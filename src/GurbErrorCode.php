@@ -52,6 +52,18 @@ final class GurbErrorCode
     public const INVITES_DAILY_LIMIT = 'INVITES_DAILY_LIMIT';
     /** The key's owner is restricted (suspended, or blocked from posting) in this community. */
     public const RESTRICTION_BLOCKED = 'RESTRICTION_BLOCKED';
+    /** `channels` on an invitation is empty or holds an unknown value. */
+    public const INVITE_CHANNEL_INVALID = 'INVITE_CHANNEL_INVALID';
+    /** A reminder's audience is not going / interested / all / members. */
+    public const REMINDER_AUDIENCE_INVALID = 'REMINDER_AUDIENCE_INVALID';
+    /** audience 'members' with no user ids. */
+    public const REMINDER_MEMBERS_REQUIRED = 'REMINDER_MEMBERS_REQUIRED';
+    /** More than 200 user ids. */
+    public const REMINDER_MEMBERS_TOO_MANY = 'REMINDER_MEMBERS_TOO_MANY';
+    /** The reminder message is over 300 characters. */
+    public const REMINDER_MESSAGE_TOO_LONG = 'REMINDER_MESSAGE_TOO_LONG';
+    /** audience 'all' — the community already sent 3 such reminders in the last 24 hours. */
+    public const REMINDER_BROAD_DAILY_LIMIT = 'REMINDER_BROAD_DAILY_LIMIT';
 
     public const NETWORK_ERROR = 'NETWORK_ERROR';
     public const UNKNOWN = 'UNKNOWN';
@@ -85,6 +97,12 @@ final class GurbErrorCode
         self::EVENT_REMINDER_NO_RECIPIENTS,
         self::INVITES_DAILY_LIMIT,
         self::RESTRICTION_BLOCKED,
+        self::INVITE_CHANNEL_INVALID,
+        self::REMINDER_AUDIENCE_INVALID,
+        self::REMINDER_MEMBERS_REQUIRED,
+        self::REMINDER_MEMBERS_TOO_MANY,
+        self::REMINDER_MESSAGE_TOO_LONG,
+        self::REMINDER_BROAD_DAILY_LIMIT,
     ];
 
     private function __construct()

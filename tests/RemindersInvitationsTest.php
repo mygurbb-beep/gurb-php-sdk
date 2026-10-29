@@ -135,4 +135,86 @@ final class RemindersInvitationsTest extends TestCase
             self::assertFalse($e->isRetryable());
         }
     }
+
+    #[Test]
+    public function send_reminder_sends_the_audience_the_picked_members_and_the_message(): void
+    {
+        $data = ['recipients' => 1, 'audience' => 'members', 'channels' => ['inApp'], 'inApp' => 1, 'push' => 0, 'emailQueued' => 0];
+        $result = $this->client(200, ['success' => true, 'data' => $data], $http)
+            ->events->sendReminder('e1', ['inApp'], 'members', ['u2'], 'لا تنسون');
+
+        self::assertSame(
+            ['channels' => ['inApp'], 'audience' => 'members', 'userIds' => ['u2'], 'message' => 'لا تنسون'],
+            \json_decode((string) $http->lastCall()->body, true),
+        );
+        self::assertSame('members', $result->audience);
+    }
+
+    #[Test]
+    public function an_unknown_audience_or_members_without_ids_is_refused_before_any_request(): void
+    {
+        $client = $this->client(200, ['success' => true, 'data' => []], $http);
+        foreach ([['everyone', []], ['members', []]] as [$audience, $ids]) {
+            try {
+                $client->events->sendReminder('e1', ['inApp'], $audience, $ids);
+                self::fail('expected a local refusal');
+            } catch (GurbApiException $e) {
+                self::assertSame(GurbErrorCode::VALIDATION_ERROR, $e->code());
+            }
+        }
+        self::assertCount(0, $http->calls);
+    }
+
+    #[Test]
+    public function the_audience_refusals_map_to_stable_codes(): void
+    {
+        foreach ([GurbErrorCode::REMINDER_AUDIENCE_INVALID, GurbErrorCode::REMINDER_MEMBERS_REQUIRED, GurbErrorCode::REMINDER_MEMBERS_TOO_MANY, GurbErrorCode::REMINDER_MESSAGE_TOO_LONG] as $code) {
+            try {
+                $this->client(400, ['success' => false, 'code' => $code, 'message' => 'refused'])->events->sendReminder('e1', ['inApp'], 'all');
+                self::fail('expected ' . $code);
+            } catch (GurbApiException $e) {
+                self::assertSame($code, $e->code());
+            }
+        }
+    }
+
+    #[Test]
+    public function create_invitations_sends_the_new_sections_and_the_channels(): void
+    {
+        $data = ['invited' => ['u2'], 'skipped' => [], 'channels' => ['email', 'inApp'], 'emailQueued' => 1];
+        $result = $this->client(200, ['success' => true, 'data' => $data], $http)
+            ->contentInvitations->create('project2', 'p1', ['u2'], null, ['email', 'inApp']);
+
+        self::assertSame(
+            ['resourceType' => 'project2', 'resourceId' => 'p1', 'inviteeIds' => ['u2'], 'channels' => ['email', 'inApp']],
+            \json_decode((string) $http->lastCall()->body, true),
+        );
+        self::assertSame(['email', 'inApp'], $result->channels);
+        self::assertSame(1, $result->emailQueued);
+    }
+
+    #[Test]
+    public function an_empty_or_unknown_invitation_channel_is_refused_before_any_request(): void
+    {
+        $client = $this->client(200, ['success' => true, 'data' => []], $http);
+        foreach ([[], ['sms']] as $channels) {
+            try {
+                $client->contentInvitations->create('tweet', 't1', ['u2'], null, $channels);
+                self::fail('expected a local refusal');
+            } catch (GurbApiException $e) {
+                self::assertSame(GurbErrorCode::VALIDATION_ERROR, $e->code());
+            }
+        }
+        self::assertCount(0, $http->calls);
+    }
+
+    #[Test]
+    public function every_new_section_is_accepted_locally(): void
+    {
+        foreach (['tweet', 'project', 'project2', 'consultant'] as $type) {
+            $this->client(200, ['success' => true, 'data' => ['invited' => [], 'skipped' => []]], $http)
+                ->contentInvitations->create($type, 'x1', ['u2']);
+            self::assertSame($type, \json_decode((string) $http->lastCall()->body, true)['resourceType']);
+        }
+    }
 }
