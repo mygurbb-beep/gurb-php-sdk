@@ -339,4 +339,61 @@ final class RequestTest extends TestCase
         // building an <img src> should never receive a non-URL.
         self::assertSame(['https://cdn.test/a.jpg'], $tweet->imageUrls);
     }
+
+    /**
+     * rawurlencode keeps «.», so ".." would be collapsed by curl into another
+     * route sent with this key, and "" would turn members->get('') into the
+     * members LIST. Nothing may leave.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function badPathIds(): iterable
+    {
+        yield 'event ".."' => ['..', 'u2'];
+        yield 'event "."' => ['.', 'u2'];
+        yield 'user ".."' => ['e1', '..'];
+        yield 'empty event' => ['', 'u2'];
+    }
+
+    #[Test]
+    #[\PHPUnit\Framework\Attributes\DataProvider('badPathIds')]
+    public function a_dot_or_empty_id_is_refused_locally_before_any_request(string $eventId, string $userId): void
+    {
+        $http = StubHttpClient::json(200, ['data' => ['status' => 'GOING']]);
+        $client = new GurbClient(self::KEY, 'https://x.test', $http);
+
+        try {
+            $client->events->approveRegistration($eventId, $userId);
+            self::fail('expected a local VALIDATION_ERROR');
+        } catch (GurbApiException $e) {
+            self::assertSame(GurbErrorCode::VALIDATION_ERROR, $e->code());
+            self::assertSame(0, $e->status());
+        }
+        self::assertCount(0, $http->calls);
+    }
+
+    #[Test]
+    public function an_empty_member_id_does_not_read_the_members_list_instead(): void
+    {
+        $http = StubHttpClient::json(200, ['data' => []]);
+        $client = new GurbClient(self::KEY, 'https://x.test', $http);
+
+        $this->expectException(GurbApiException::class);
+        try {
+            $client->members->get('');
+        } finally {
+            self::assertCount(0, $http->calls);
+        }
+    }
+
+    #[Test]
+    public function an_id_that_merely_contains_dots_still_goes_out_as_one_segment(): void
+    {
+        $http = StubHttpClient::json(200, ['data' => ['status' => 'GOING']]);
+        $client = new GurbClient(self::KEY, 'https://x.test', $http);
+
+        $client->events->approveRegistration('e.1', '...');
+
+        self::assertSame('https://x.test/api/sdk/events/e.1/registrations/.../approve', $http->lastCall()->url);
+    }
 }

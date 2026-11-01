@@ -107,6 +107,19 @@ final class Requester
      */
     public function request(string $method, string $path, array $query = [], ?array $body = null): array
     {
+        // Every id is a whole path segment, and rawurlencode keeps «.»: an id
+        // of ".." is collapsed by curl into a DIFFERENT route, sent with this
+        // key (sdk/events/../registrations/…), and an empty one turns
+        // getMember('') into the members LIST (sdk/members/). Refused here,
+        // once for every method, before anything is sent.
+        foreach (\explode('/', \ltrim($path, '/')) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                throw GurbApiException::localValidation(
+                    "An id in the request path is empty, \".\" or \"..\": {$path}",
+                );
+            }
+        }
+
         $url = $this->baseUrl . '/api/' . \ltrim($path, '/') . $this->queryString($query);
 
         $headers = [

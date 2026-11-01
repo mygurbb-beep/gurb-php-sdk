@@ -29,6 +29,15 @@ code points rather than UTF-16 units.
 
 Matches `@gurb/server` 1.10.0 on the wire (same paths, bodies, local guards and error codes).
 
+### Security — an id can no longer change which route a call reaches
+
+Every id goes into the URL as one encoded path segment, but `rawurlencode` keeps «.»: an id of `..` was
+collapsed by the HTTP client into a different route sent with the same key
+(`sdk/events/../registrations/…`), and an empty id turned `$client->members->get('')` into the members list. Every
+request now refuses a path segment that is empty, `.` or `..` with a local `VALIDATION_ERROR`
+(status 0) before anything is sent — one guard for every method, in both SDKs. No route was
+reachable this way at the time; an id that merely contains dots (`e.1`, `...`) is unaffected.
+
 ### Added — event registration: guests, approval and questions (feat/event-guests)
 
 «تسجيل الزوار في الفعاليات» — the organiser's surface. The visitor's own flow is browser-only on
