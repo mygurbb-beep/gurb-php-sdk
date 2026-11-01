@@ -65,6 +65,18 @@ final class GurbErrorCode
     /** audience 'all' — the community already sent 3 such reminders in the last 24 hours. */
     public const REMINDER_BROAD_DAILY_LIMIT = 'REMINDER_BROAD_DAILY_LIMIT';
 
+    // Event registrations (1.10.0). None of these is helped by retrying now.
+    /** The registration is not waiting for a decision (already approved, declined or cancelled). */
+    public const REGISTRATION_NOT_PENDING = 'REGISTRATION_NOT_PENDING';
+    /** Approving it would exceed the event's capacity (or jump the waitlist). */
+    public const EVENT_FULL = 'EVENT_FULL';
+    /** The event is not open for booking (draft, cancelled or ended). */
+    public const EVENT_NOT_BOOKABLE = 'EVENT_NOT_BOOKABLE';
+    /** 'approvalGuests' / 'approvalMembers' => true on a paid event. */
+    public const APPROVAL_REQUIRES_FREE_EVENT = 'APPROVAL_REQUIRES_FREE_EVENT';
+    /** A registration setting that is not true/false (e.g. 'approvalGuests' => 'yes'). */
+    public const EVENT_REGISTRATION_SETTING_INVALID = 'EVENT_REGISTRATION_SETTING_INVALID';
+
     public const NETWORK_ERROR = 'NETWORK_ERROR';
     public const UNKNOWN = 'UNKNOWN';
 
@@ -103,6 +115,11 @@ final class GurbErrorCode
         self::REMINDER_MEMBERS_TOO_MANY,
         self::REMINDER_MESSAGE_TOO_LONG,
         self::REMINDER_BROAD_DAILY_LIMIT,
+        self::REGISTRATION_NOT_PENDING,
+        self::EVENT_FULL,
+        self::EVENT_NOT_BOOKABLE,
+        self::APPROVAL_REQUIRES_FREE_EVENT,
+        self::EVENT_REGISTRATION_SETTING_INVALID,
     ];
 
     private function __construct()

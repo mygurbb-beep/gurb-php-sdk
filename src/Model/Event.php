@@ -18,6 +18,19 @@ final class Event
         public readonly string $startsAt,
         public readonly ?string $endsAt,
         public readonly int $attendeeCount,
+        /**
+         * «تسجيل الزوار» (1.10.0). Null when the response does not carry it (a backend without
+         * the feature) — read null as false. See EventsResource::create() for each setting.
+         */
+        public readonly ?bool $guestRegistration = null,
+        public readonly ?bool $approvalGuests = null,
+        public readonly ?bool $approvalMembers = null,
+        /**
+         * The registration questions (join-form document, questions only), or null.
+         *
+         * @var array<string, mixed>|null
+         */
+        public readonly ?array $registrationQuestions = null,
     ) {
     }
 
@@ -33,6 +46,10 @@ final class Event
             startsAt: Decode::str($data, 'startsAt'),
             endsAt: Decode::nullableStr($data, 'endsAt'),
             attendeeCount: Decode::int($data, 'attendeeCount'),
+            guestRegistration: Decode::nullableBool($data, 'guestRegistration'),
+            approvalGuests: Decode::nullableBool($data, 'approvalGuests'),
+            approvalMembers: Decode::nullableBool($data, 'approvalMembers'),
+            registrationQuestions: Decode::nullableObj($data, 'registrationQuestions'),
         );
     }
 }

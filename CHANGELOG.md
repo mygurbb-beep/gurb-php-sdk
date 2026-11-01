@@ -25,6 +25,38 @@ code points rather than UTF-16 units.
 > The tags want re-cutting as `0.1.0`, `0.2.0` and `0.3.0` against the commits they actually
 > describe, before anything is published.
 
+## 1.10.0
+
+Matches `@gurb/server` 1.10.0 on the wire (same paths, bodies, local guards and error codes).
+
+### Added — event registration: guests, approval and questions (feat/event-guests)
+
+«تسجيل الزوار في الفعاليات» — the organiser's surface. The visitor's own flow is browser-only on
+Gurb's shared event page and is not in this SDK.
+
+- `$gurb->events->listRegistrations($eventId, $status = null)` → `GET /api/sdk/events/{id}/registrations`
+  — «طلبات التسجيل»: members and guests (`isGuest`) who registered, their `answers` and the decision.
+  `$status`: 'PENDING' (the server's default), 'GOING', 'DECLINED' or 'ALL'. Returns
+  `EventRegistrationList` (`items` of `EventRegistration`, `counts` per status).
+- `$gurb->events->approveRegistration($eventId, $userId)` →
+  `POST /api/sdk/events/{id}/registrations/{userId}/approve` — PENDING → GOING; returns 'GOING'.
+- `$gurb->events->declineRegistration($eventId, $userId, $reason = null)` →
+  `POST /api/sdk/events/{id}/registrations/{userId}/decline` — PENDING → DECLINED; returns 'DECLINED'.
+  No reason, no body.
+- `events->create()` / `update()` accept `guestRegistration`, `approvalGuests`, `approvalMembers` and
+  `registrationQuestions` (the join-form document, questions only); `Model\Event` gains them as
+  nullable properties (null when the response does not carry them).
+  `guestRegistration` works on free AND paid events: on a paid one the visitor pays the ticket price
+  on the shared page and returns to it with the ticket. Approval stays free-only.
+- Local guard (no request sent): an unknown status filter.
+- `GurbErrorCode`: `REGISTRATION_NOT_PENDING`, `EVENT_FULL`, `EVENT_NOT_BOOKABLE`,
+  `APPROVAL_REQUIRES_FREE_EVENT`,
+  `EVENT_REGISTRATION_SETTING_INVALID` (a setting that is not true/false) — none retryable.
+
+Requires a Gurb backend with feat/event-guests deployed — that branch adds the `/api/sdk` routes above
+(`src/sdk/routes/event-registrations.sdk.routes.ts`) and the four settings on `POST|PATCH /api/sdk/events`.
+Do not tag before it is live in production.
+
 ## 1.9.0
 
 Matches `@gurb/server` 1.9.0 on the wire (same paths, bodies, local guards and error codes).

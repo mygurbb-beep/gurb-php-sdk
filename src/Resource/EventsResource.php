@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace Gurb\Resource;
 
 use Gurb\GurbApiException;
+use Gurb\Internal\Decode;
 use Gurb\Internal\Requester;
 use Gurb\Model\Event;
+use Gurb\Model\EventRegistrationList;
 use Gurb\Model\EventReminderResult;
 use Gurb\Model\Paginated;
 
 final class EventsResource
 {
+    /** The `status` filters `listRegistrations()` accepts. */
+    private const REGISTRATION_FILTERS = ['PENDING', 'GOING', 'DECLINED', 'ALL'];
+
     public function __construct(private readonly Requester $requester)
     {
     }
@@ -54,6 +59,14 @@ final class EventsResource
      * `status: 'DRAFT'` announces NOTHING — no webhook, no notification.
      * That is inherited from Gurb and is deliberate: an integrator should not be
      * told "an event happened" about a draft.
+     *
+     * «تسجيل الزوار» (1.10.0) — four optional settings go in $options:
+     *   'guestRegistration' => true   people without an account register through the shared link
+     *                                 (a paid event: they pay on that page and return to it);
+     *   'approvalGuests'    => true   a guest's registration waits for a decision (PENDING);
+     *   'approvalMembers'   => true   the same for members (paid → 400 APPROVAL_REQUIRES_FREE_EVENT);
+     *   'registrationQuestions' => ['sections' => [...]]  the join-form document, questions only;
+     *                                 null removes them (update()).
      *
      * @param array<string, mixed> $options Any other field the endpoint accepts.
      *                                      Unknown keys are ignored by the server.
@@ -166,5 +179,71 @@ final class EventsResource
             'sdk/events/' . \rawurlencode($eventId) . '/reminders',
             body: $body,
         ));
+    }
+
+    /**
+     * «طلبات التسجيل» — the people who registered for the event (members and guests), with their
+     * answers to its questions and the organiser's decision.
+     *
+     * The key's owner needs `calendar:manage` OR `calendar:moderate`, and must see the event at the
+     * moderator tier — otherwise 404 NOT_FOUND, not a 403, so event ids cannot be probed.
+     *
+     * @param 'PENDING'|'GOING'|'DECLINED'|'ALL'|null $status Null → the server's default, PENDING.
+     *
+     * @throws GurbApiException
+     */
+    public function listRegistrations(string $eventId, ?string $status = null): EventRegistrationList
+    {
+        if ($status !== null && !\in_array($status, self::REGISTRATION_FILTERS, true)) {
+            throw GurbApiException::localValidation('Unknown registration status — use "PENDING", "GOING", "DECLINED" or "ALL".');
+        }
+
+        return EventRegistrationList::fromArray($this->requester->request(
+            'GET',
+            'sdk/events/' . \rawurlencode($eventId) . '/registrations',
+            ['status' => $status],
+        ));
+    }
+
+    /**
+     * Approve a pending registration: PENDING → GOING (with an entry ticket when the event issues
+     * them). The person is told by e-mail, and a member also in the app. Returns the new status.
+     *
+     * 400 EVENT_FULL past the capacity; 409 REGISTRATION_NOT_PENDING when it was already decided or
+     * withdrawn; 409 EVENT_NOT_BOOKABLE when the event is a draft, cancelled or over.
+     *
+     * @return 'GOING'
+     *
+     * @throws GurbApiException
+     */
+    public function approveRegistration(string $eventId, string $userId): string
+    {
+        $data = $this->requester->request(
+            'POST',
+            'sdk/events/' . \rawurlencode($eventId) . '/registrations/' . \rawurlencode($userId) . '/approve',
+        );
+
+        return Decode::str($data, 'status', 'GOING');
+    }
+
+    /**
+     * Decline a pending registration: PENDING → DECLINED, with an optional reason sent to the person
+     * (the server keeps the first 500 characters). A declined person cannot ask again. Returns the
+     * new status. 409 REGISTRATION_NOT_PENDING when it was already decided.
+     *
+     * @return 'DECLINED'
+     *
+     * @throws GurbApiException
+     */
+    public function declineRegistration(string $eventId, string $userId, ?string $reason = null): string
+    {
+        $data = $this->requester->request(
+            'POST',
+            'sdk/events/' . \rawurlencode($eventId) . '/registrations/' . \rawurlencode($userId) . '/decline',
+            // No reason, no body — the same wire as @gurb/server.
+            body: $reason === null ? null : ['reason' => $reason],
+        );
+
+        return Decode::str($data, 'status', 'DECLINED');
     }
 }
