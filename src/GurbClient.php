@@ -7,6 +7,7 @@ namespace Gurb;
 use Gurb\Embed\EmbedSnippet;
 use Gurb\Http\HttpClient;
 use Gurb\Input\CreateCommunityInput;
+use Gurb\Input\MemberProfileInput;
 use Gurb\Internal\Requester;
 use Gurb\Model\CommunityRequest;
 use Gurb\Model\EmbedSession;
@@ -163,6 +164,9 @@ final class GurbClient
      *                               the first person's account inside your
      *                               community. Never pass an email or a username
      *                               a user can change.
+     * @param MemberProfileInput|null $profile Seeds or refreshes the member's
+     *                               profile. An invalid field is dropped by the
+     *                               server and the sign-in goes ahead.
      *
      * @throws GurbApiException
      */
@@ -171,6 +175,7 @@ final class GurbClient
         string $displayName,
         ?string $email = null,
         ?string $avatarUrl = null,
+        ?MemberProfileInput $profile = null,
     ): EmbedSession {
         $body = [
             'externalUserId' => $externalUserId,
@@ -185,6 +190,9 @@ final class GurbClient
         }
         if ($avatarUrl !== null) {
             $body['avatarUrl'] = $avatarUrl;
+        }
+        if ($profile !== null) {
+            $body['profile'] = $profile->toArray();
         }
 
         return EmbedSession::fromArray($this->requester->request('POST', 'embed/sessions', body: $body));

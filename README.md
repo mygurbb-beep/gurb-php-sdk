@@ -325,6 +325,41 @@ foreach (array_chunk($rows, MembersResource::BULK_MEMBER_LIMIT) as $chunk) {
 }
 ```
 
+## Partner profile fields (1.11.0)
+
+A partner can seed a member's Gurb profile from its own records: a `MemberProfileInput` on each
+`BulkMemberInput` row and on `createEmbedSession(profile: …)` — the same object on both.
+
+```php
+use Gurb\Input\BulkMemberInput;
+use Gurb\Input\MemberProfileInput;
+use Gurb\Input\MemberSocialLinks;
+
+$profile = new MemberProfileInput(
+    bio: 'Founder of Acme',            // ≤ 200
+    jobTitle: 'CEO',                   // ≤ 200
+    company: 'Acme',                   // ≤ 200
+    industry: 'Retail',                // ≤ 200
+    city: 'Riyadh',                    // ≤ 100
+    phone: '+966500000000',            // hidden from other members until they opt in
+    whatsapp: '+966500000000',         // ≤ 50, hidden (follows phone)
+    social: new MemberSocialLinks(linkedin: 'https://www.linkedin.com/in/ali', x: 'https://x.com/ali'), // ≤ 500 each
+);
+
+$gurb->members->bulkUpsert([new BulkMemberInput('riyadah_42', 'Ali Ahmed', profile: $profile)]);
+$session = $gurb->createEmbedSession('riyadah_42', 'Ali Ahmed', profile: $profile);
+```
+
+- **`null` (or not passing an argument) leaves the field untouched; `''` clears it.** The wire also
+  takes an explicit `null` as «clear» (the TypeScript SDK sends it), but a PHP named argument cannot
+  tell «not passed» from «null», and omitting untouched fields is what makes a nightly sync safe.
+- **A field the member edited in Gurb is kept** — your value is ignored silently.
+- Directory privacy, birth date, gender, marital status, nationality and employee number are never written.
+- A value over its limit: on `bulkUpsert` that **row** fails with `VALIDATION_ERROR` (nothing on it is
+  written); on `createEmbedSession` that one field is **dropped** and the sign-in goes ahead, like a bad
+  `avatarUrl`.
+- `bulkUpsert` with a profile needs `users:manage` on the key.
+
 ## Ask for a new community
 
 A community key can never create a community outright. It files a request that a platform admin
