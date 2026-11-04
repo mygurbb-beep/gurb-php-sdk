@@ -26,17 +26,20 @@ final class BulkMemberInput
      *                                 A key can never assign a role above its own
      *                                 authority, and the enum has no platform role
      *                                 to assign in the first place.
+     * @param MemberProfileInput|null $profile Seeds or refreshes the member's
+     *                                 profile. Needs `users:manage` on the key.
      */
     public function __construct(
         public readonly string $externalUserId,
         public readonly string $displayName,
         public readonly ?string $email = null,
         public readonly ?CommunityRole $role = null,
+        public readonly ?MemberProfileInput $profile = null,
     ) {
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
@@ -51,6 +54,9 @@ final class BulkMemberInput
         }
         if ($this->role !== null) {
             $row['role'] = $this->role->value;
+        }
+        if ($this->profile !== null) {
+            $row['profile'] = $this->profile->toArray();
         }
 
         return $row;

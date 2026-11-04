@@ -25,6 +25,26 @@ code points rather than UTF-16 units.
 > The tags want re-cutting as `0.1.0`, `0.2.0` and `0.3.0` against the commits they actually
 > describe, before anything is published.
 
+## 1.11.0
+
+Matches `@gurb/server` 1.11.0 on the wire (same paths, bodies, local guards and error codes).
+
+### Added — partner profile fields (feat/partner-profile-fields)
+
+- `Gurb\Input\MemberProfileInput` (`bio` ≤ 200, `jobTitle` ≤ 200, `company` ≤ 200, `industry` ≤ 200,
+  `city` ≤ 100, `phone`, `whatsapp` ≤ 50, `social`) and `Gurb\Input\MemberSocialLinks`
+  (`linkedin`, `x`, `instagram`, `facebook`, `youtube`, `tiktok`, `snapchat`, `telegram`, ≤ 500 each).
+- `BulkMemberInput` gains `?MemberProfileInput $profile = null`; `GurbClient::createEmbedSession()` gains
+  `?MemberProfileInput $profile = null` (last named argument — existing calls are unchanged).
+- A `null` argument is omitted (field untouched); `''` clears. A field the member edited in Gurb is kept;
+  directory privacy is never written.
+- An invalid value fails that bulk ROW with `VALIDATION_ERROR`; on `createEmbedSession` the field is dropped
+  and the sign-in goes ahead. No local guard: the server owns the limits.
+- `members->bulkUpsert()` with a profile needs `users:manage` on the key.
+
+Requires a Gurb backend with feat/partner-profile-fields deployed. Stacked on 1.10.0 (feat/event-guests),
+which is not tagged yet. Do not tag before both are live in production.
+
 ## 1.10.0
 
 Matches `@gurb/server` 1.10.0 on the wire (same paths, bodies, local guards and error codes).
